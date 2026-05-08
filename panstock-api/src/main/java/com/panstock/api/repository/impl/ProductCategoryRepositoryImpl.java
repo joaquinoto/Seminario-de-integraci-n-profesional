@@ -16,8 +16,18 @@ public class ProductCategoryRepositoryImpl implements ProductCategoryRepository 
     private final ProductCategoryJpaRepository productCategoryJpaRepository;
 
     @Override
+    public ProductCategory save(ProductCategory category) {
+        return productCategoryJpaRepository.save(category);
+    }
+
+    @Override
     public Optional<ProductCategory> findById(Long id) {
         return productCategoryJpaRepository.findById(id);
+    }
+
+    @Override
+    public List<ProductCategory> findAll() {
+        return productCategoryJpaRepository.findAllByOrderByNameAsc();
     }
 
     @Override
@@ -26,7 +36,12 @@ public class ProductCategoryRepositoryImpl implements ProductCategoryRepository 
     }
 
     @Override
-    public ProductCategory save(ProductCategory category) {
-        return productCategoryJpaRepository.save(category);
+    public boolean existsByNameIgnoreCase(String name) {
+        return productCategoryJpaRepository.existsByNameIgnoreCase(name);
+    }
+
+    @Override
+    public boolean existsByNameIgnoreCaseAndIdNot(String name, Long id) {
+        return productCategoryJpaRepository.existsByNameIgnoreCaseAndIdNot(name, id);
     }
 }

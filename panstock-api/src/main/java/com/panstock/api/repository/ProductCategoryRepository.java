@@ -7,9 +7,15 @@ import java.util.Optional;
 
 public interface ProductCategoryRepository {
 
+    ProductCategory save(ProductCategory category);
+
     Optional<ProductCategory> findById(Long id);
+
+    List<ProductCategory> findAll();
 
     List<ProductCategory> findActive();
 
-    ProductCategory save(ProductCategory category);
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

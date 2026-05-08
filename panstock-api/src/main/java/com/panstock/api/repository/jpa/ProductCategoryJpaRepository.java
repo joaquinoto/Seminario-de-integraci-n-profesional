@@ -7,5 +7,11 @@ import java.util.List;
 
 public interface ProductCategoryJpaRepository extends JpaRepository<ProductCategory, Long> {
 
+    List<ProductCategory> findAllByOrderByNameAsc();
+
     List<ProductCategory> findByActiveTrueOrderByNameAsc();
+
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

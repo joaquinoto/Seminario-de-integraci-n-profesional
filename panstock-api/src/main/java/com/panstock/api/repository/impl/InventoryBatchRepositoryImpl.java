@@ -39,4 +39,12 @@ public class InventoryBatchRepositoryImpl implements InventoryBatchRepository {
                 BigDecimal.ZERO
         );
     }
+
+    @Override
+    public List<InventoryBatch> findSellableByProductId(Long productId) {
+        return inventoryBatchJpaRepository.findSellableByProductId(
+                productId,
+                BatchStatus.AVAILABLE
+        );
+    }
 }

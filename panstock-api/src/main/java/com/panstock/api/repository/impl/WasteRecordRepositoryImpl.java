@@ -6,6 +6,7 @@ import com.panstock.api.repository.jpa.WasteRecordJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,6 +28,11 @@ public class WasteRecordRepositoryImpl implements WasteRecordRepository {
 
     @Override
     public List<WasteRecord> findAll() {
-        return wasteRecordJpaRepository.findAllByOrderByWasteDateDesc();
+        return wasteRecordJpaRepository.findAll();
+    }
+
+    @Override
+    public List<WasteRecord> findByWasteDateBetween(LocalDateTime from, LocalDateTime to) {
+        return wasteRecordJpaRepository.findByWasteDateBetweenOrderByWasteDateAsc(from, to);
     }
 }

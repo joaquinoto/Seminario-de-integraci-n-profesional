@@ -6,5 +6,7 @@ import java.util.Optional;
 
 public interface AppSettingRepository {
 
+    AppSetting save(AppSetting appSetting);
+
     Optional<AppSetting> findBySettingKey(String settingKey);
 }
