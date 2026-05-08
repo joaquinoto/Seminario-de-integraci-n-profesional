@@ -26,3 +26,6 @@ target/
 
 ### VS Code ###
 .vscode/
+
+## Data Base ##
+./main/resources/application.properties
