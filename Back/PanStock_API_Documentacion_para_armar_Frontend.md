@@ -1,4 +1,9 @@
 # PanStock API - Documentación para Frontend
+## Requisitos previos
+
+Antes de correr esta API es necesario correr el archivo .sql, que está dentro de la carpeta database, en un motor de mysql.
+
+También, se debe actualizar el usuario y contaraseña (segun corresponda) en el archivo application.properties para acceder a la bd creada previamente.
 
 ## 1. Objetivo de este documento
 
@@ -341,19 +346,14 @@ EXPIRED
 ### 6.11. Role
 
 ```text
-ADMIN_OWNER
-MANAGER
+OWNER
 EMPLOYEE
 ```
 
 Uso:
 
-- `ADMIN_OWNER`: dueño o administrador.
-- `MANAGER`: encargado.
+- `OWNER`: dueño o administrador.
 - `EMPLOYEE`: empleado.
-
-Por ahora no hay JWT ni permisos reales por rol. Los roles existen para trazabilidad y futura seguridad.
-
 ---
 
 ### 6.12. AlertType
@@ -406,25 +406,7 @@ Esto significa que el frontend puede tener filtros como:
 
 ---
 
-### 7.2. No hay autenticación todavía
-
-El backend todavía no tiene JWT ni login protegido.
-
-Por ahora, si un endpoint pide `userId`, el frontend debe enviar un ID de usuario existente.
-
-Ejemplo:
-
-```json
-{
-  "userId": 2
-}
-```
-
-En una versión futura, ese `userId` debería salir del usuario autenticado.
-
----
-
-### 7.3. Stock por lotes
+### 7.2. Stock por lotes
 
 El stock total de un producto no está guardado directamente en la tabla `products`.
 
@@ -438,7 +420,7 @@ Esto es importante para el frontend:
 
 ---
 
-### 7.4. FEFO en ventas
+### 7.3. FEFO en ventas
 
 Las ventas manuales descuentan stock usando FEFO:
 
@@ -845,8 +827,6 @@ active = false
 ## 11.1. Contexto
 
 Los usuarios se usan para trazabilidad: saber quién registró una merma, una venta, un ajuste o una promoción.
-
-Por ahora no hay login ni JWT.
 
 ---
 
