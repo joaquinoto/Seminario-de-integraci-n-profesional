@@ -16,7 +16,8 @@ public interface PromotionJpaRepository extends JpaRepository<Promotion, Long> {
             LocalDateTime now
     );
 
-    boolean existsByBatchIdAndStatusAndEndDateGreaterThanEqual(
+    // CORREGIDO: batch es @ManyToOne, se navega con batch_Id
+    boolean existsByBatch_IdAndStatusAndEndDateGreaterThanEqual(
             Long batchId,
             PromotionStatus status,
             LocalDateTime now

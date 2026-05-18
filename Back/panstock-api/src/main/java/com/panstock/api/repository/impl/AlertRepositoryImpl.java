@@ -39,7 +39,7 @@ public class AlertRepositoryImpl implements AlertRepository {
 
     @Override
     public boolean existsActiveByAlertTypeAndBatchId(AlertType alertType, Long batchId) {
-        return alertJpaRepository.existsByAlertTypeAndBatchIdAndStatus(
+        return alertJpaRepository.existsByAlertTypeAndBatch_IdAndStatus(
                 alertType,
                 batchId,
                 AlertStatus.ACTIVE
@@ -48,7 +48,7 @@ public class AlertRepositoryImpl implements AlertRepository {
 
     @Override
     public boolean existsActiveByAlertTypeAndProductId(AlertType alertType, Long productId) {
-        return alertJpaRepository.existsByAlertTypeAndProductIdAndStatus(
+        return alertJpaRepository.existsByAlertTypeAndProduct_IdAndStatus(
                 alertType,
                 productId,
                 AlertStatus.ACTIVE

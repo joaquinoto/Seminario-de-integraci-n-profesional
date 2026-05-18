@@ -13,6 +13,10 @@ public record WasteRecordResponse(
 
         Long batchId,
 
+        // AGREGADOS: faltaban según documentación
+        Long createdById,
+        String createdByName,
+
         BigDecimal quantity,
         WasteReason reason,
 

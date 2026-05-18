@@ -42,7 +42,8 @@ public class PromotionRepositoryImpl implements PromotionRepository {
 
     @Override
     public boolean existsActiveByBatchId(Long batchId) {
-        return promotionJpaRepository.existsByBatchIdAndStatusAndEndDateGreaterThanEqual(
+        // CORREGIDO: usa el método con batch_Id en lugar de batchId
+        return promotionJpaRepository.existsByBatch_IdAndStatusAndEndDateGreaterThanEqual(
                 batchId,
                 PromotionStatus.ACTIVE,
                 LocalDateTime.now()

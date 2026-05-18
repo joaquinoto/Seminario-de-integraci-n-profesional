@@ -13,13 +13,13 @@ public interface AlertJpaRepository extends JpaRepository<Alert, Long> {
 
     List<Alert> findByStatusOrderByCreatedAtDesc(AlertStatus status);
 
-    boolean existsByAlertTypeAndBatchIdAndStatus(
+    boolean existsByAlertTypeAndBatch_IdAndStatus(
             AlertType alertType,
             Long batchId,
             AlertStatus status
     );
 
-    boolean existsByAlertTypeAndProductIdAndStatus(
+    boolean existsByAlertTypeAndProduct_IdAndStatus(
             AlertType alertType,
             Long productId,
             AlertStatus status

@@ -11,6 +11,7 @@ import com.panstock.api.exception.BadRequestException;
 import com.panstock.api.exception.ResourceNotFoundException;
 import com.panstock.api.mapper.PromotionMapper;
 import com.panstock.api.repository.*;
+import com.panstock.api.repository.jpa.UserJpaRepository;
 import com.panstock.api.service.PromotionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class PromotionServiceImpl implements PromotionService {
     private final PromotionRepository promotionRepository;
     private final ProductRepository productRepository;
     private final InventoryBatchRepository inventoryBatchRepository;
-    private final UserRepository userRepository;
+    private final UserJpaRepository userRepository;
     private final AppSettingRepository appSettingRepository;
 
     @Override

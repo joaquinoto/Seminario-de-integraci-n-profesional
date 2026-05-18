@@ -14,6 +14,7 @@ import com.panstock.api.exception.ResourceNotFoundException;
 import com.panstock.api.mapper.InventoryBatchMapper;
 import com.panstock.api.mapper.StockMovementMapper;
 import com.panstock.api.repository.*;
+import com.panstock.api.repository.jpa.UserJpaRepository;
 import com.panstock.api.service.StockService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,7 +38,7 @@ public class StockServiceImpl implements StockService {
     private final InventoryBatchRepository inventoryBatchRepository;
     private final StockMovementRepository stockMovementRepository;
     private final AppSettingRepository appSettingRepository;
-    private final UserRepository userRepository;
+    private final UserJpaRepository userRepository;
 
     @Override
     public InventoryBatchResponse registerEntry(StockEntryRequest request) {

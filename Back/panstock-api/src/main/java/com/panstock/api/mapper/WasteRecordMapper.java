@@ -1,6 +1,7 @@
 package com.panstock.api.mapper;
 
 import com.panstock.api.dto.response.WasteRecordResponse;
+import com.panstock.api.entity.User;
 import com.panstock.api.entity.WasteRecord;
 
 public class WasteRecordMapper {
@@ -9,6 +10,8 @@ public class WasteRecordMapper {
     }
 
     public static WasteRecordResponse toResponse(WasteRecord wasteRecord) {
+        User createdBy = wasteRecord.getCreatedBy();
+
         return new WasteRecordResponse(
                 wasteRecord.getId(),
 
@@ -16,6 +19,10 @@ public class WasteRecordMapper {
                 wasteRecord.getProduct().getName(),
 
                 wasteRecord.getBatch().getId(),
+
+                // AGREGADOS: usuario que registró la merma
+                createdBy != null ? createdBy.getId() : null,
+                createdBy != null ? createdBy.getFirstName() + " " + createdBy.getLastName() : null,
 
                 wasteRecord.getQuantity(),
                 wasteRecord.getReason(),

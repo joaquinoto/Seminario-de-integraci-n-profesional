@@ -1,20 +1,25 @@
 package com.panstock.api.service;
 
-import com.panstock.api.dto.request.UserRequest;
-import com.panstock.api.dto.response.UserResponse;
-import com.panstock.api.enums.Role;
+import java.util.Optional;
 
-import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
+import com.panstock.api.controller.auth.RegisterRequest;
+import com.panstock.api.entity.User;
+
+import jakarta.transaction.Transactional;
 
 public interface UserService {
 
-    UserResponse create(UserRequest request);
+    @Transactional
+    public User createUser(RegisterRequest request) throws Exception;
 
-    List<UserResponse> findAll(Boolean enabledOnly, Role role);
+    public User getUserByUsername(String username) throws Exception;
 
-    UserResponse findById(Long id);
+    public Page<User> getUsers(PageRequest pageRequest) throws Exception;
 
-    UserResponse update(Long id, UserRequest request);
+    public User updateUser(User user) throws Exception;
 
-    void delete(Long id);
+    public Optional<User> getUserById(Long userId)throws Exception;
 }
