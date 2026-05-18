@@ -1,3 +1,251 @@
+-- =========================================================
+-- PanStock: datos mock completos
+-- Backend MVP - Java 21 + Spring Boot 4.x + Spring Data JPA + MariaDB/MySQL
+-- Uso Linux/Mac:
+--   mariadb -u root -p < panstock_schema_mock_corregido.sql
+--   sudo /usr/bin/mariadb < panstock_schema_mock_corregido.sql
+-- Uso Windows:
+--   mysql -u root -p < panstock_schema_mock_corregido.sql
+-- =========================================================
+
+DROP DATABASE IF EXISTS panstock_db;
+CREATE DATABASE panstock_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Usuario local recomendado para Spring Boot.
+-- Si preferís usar root directamente, borrá estas líneas y
+-- configurá application.properties con usuario=root y tu contraseña.
+CREATE USER IF NOT EXISTS 'panstock_user'@'localhost' IDENTIFIED BY 'panstock123';
+ALTER USER 'panstock_user'@'localhost' IDENTIFIED BY 'panstock123';
+CREATE USER IF NOT EXISTS 'panstock_user'@'127.0.0.1' IDENTIFIED BY 'panstock123';
+ALTER USER 'panstock_user'@'127.0.0.1' IDENTIFIED BY 'panstock123';
+GRANT ALL PRIVILEGES ON panstock_db.* TO 'panstock_user'@'localhost';
+GRANT ALL PRIVILEGES ON panstock_db.* TO 'panstock_user'@'127.0.0.1';
+FLUSH PRIVILEGES;
+
+USE panstock_db;
+
+-- =========================================================
+-- TABLAS
+-- =========================================================
+
+CREATE TABLE users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE product_categories (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description VARCHAR(255),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE suppliers (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(150) NOT NULL,
+    supplier_type VARCHAR(30) NOT NULL,
+    contact_name VARCHAR(150),
+    phone VARCHAR(50),
+    email VARCHAR(150),
+    notes TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE products (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(150) NOT NULL,
+    description VARCHAR(255),
+    category_id BIGINT NOT NULL,
+    default_supplier_id BIGINT,
+    origin VARCHAR(30) NOT NULL,
+    perishable BOOLEAN NOT NULL,
+    unit_type VARCHAR(30) NOT NULL,
+    cost_price DECIMAL(12,2),
+    sale_price DECIMAL(12,2),
+    minimum_stock DECIMAL(12,3),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES product_categories(id),
+    CONSTRAINT fk_products_supplier FOREIGN KEY (default_supplier_id) REFERENCES suppliers(id)
+);
+
+CREATE TABLE product_shelf_life_rules (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    condition_type VARCHAR(50) NOT NULL,
+    duration_days INT,
+    duration_hours INT,
+    notes VARCHAR(255),
+    CONSTRAINT fk_shelf_life_product FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE inventory_batches (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    supplier_id BIGINT,
+    received_date DATE NOT NULL,
+    expiration_date DATE,
+    initial_quantity DECIMAL(12,3) NOT NULL,
+    current_quantity DECIMAL(12,3) NOT NULL,
+    unit_cost DECIMAL(12,2),
+    unit_sale_price DECIMAL(12,2),
+    storage_type VARCHAR(30),
+    batch_status VARCHAR(30) NOT NULL,
+    notes TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    CONSTRAINT fk_batches_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_batches_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+);
+
+CREATE TABLE stock_movements (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    batch_id BIGINT,
+    user_id BIGINT,
+    movement_type VARCHAR(30) NOT NULL,
+    quantity DECIMAL(12,3) NOT NULL,
+    movement_date DATETIME NOT NULL,
+    notes TEXT,
+    related_waste_record_id BIGINT,
+    created_at DATETIME NOT NULL,
+    CONSTRAINT fk_movements_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_movements_batch FOREIGN KEY (batch_id) REFERENCES inventory_batches(id),
+    CONSTRAINT fk_movements_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE waste_records (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    batch_id BIGINT NOT NULL,
+    created_by_id BIGINT,
+    quantity DECIMAL(12,3) NOT NULL,
+    reason VARCHAR(50) NOT NULL,
+    waste_date DATETIME NOT NULL,
+    unit_cost DECIMAL(12,2),
+    unit_sale_price DECIMAL(12,2),
+    economic_loss DECIMAL(12,2) NOT NULL,
+    notes TEXT,
+    created_at DATETIME NOT NULL,
+    CONSTRAINT fk_waste_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_waste_batch FOREIGN KEY (batch_id) REFERENCES inventory_batches(id),
+    CONSTRAINT fk_waste_user FOREIGN KEY (created_by_id) REFERENCES users(id)
+);
+
+CREATE TABLE promotions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id BIGINT NOT NULL,
+    batch_id BIGINT,
+    created_by_id BIGINT,
+    title VARCHAR(150) NOT NULL,
+    description TEXT,
+    discount_type VARCHAR(30) NOT NULL,
+    discount_percentage DECIMAL(5,2),
+    promotional_price DECIMAL(12,2),
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    suggested_by_system BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    CONSTRAINT fk_promotions_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_promotions_batch FOREIGN KEY (batch_id) REFERENCES inventory_batches(id),
+    CONSTRAINT fk_promotions_user FOREIGN KEY (created_by_id) REFERENCES users(id)
+);
+
+CREATE TABLE alerts (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    alert_type VARCHAR(40) NOT NULL,
+    product_id BIGINT NOT NULL,
+    batch_id BIGINT,
+    message VARCHAR(255) NOT NULL,
+    severity VARCHAR(30) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    created_at DATETIME NOT NULL,
+    resolved_at DATETIME,
+    CONSTRAINT fk_alerts_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_alerts_batch FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
+);
+
+CREATE TABLE app_settings (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value VARCHAR(255) NOT NULL,
+    description VARCHAR(255)
+);
+
+-- =========================================================
+-- ÍNDICES
+-- =========================================================
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_enabled ON users(enabled);
+CREATE INDEX idx_users_role ON users(role);
+
+CREATE INDEX idx_categories_active ON product_categories(active);
+
+CREATE INDEX idx_suppliers_type ON suppliers(supplier_type);
+CREATE INDEX idx_suppliers_active ON suppliers(active);
+
+CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_products_supplier ON products(default_supplier_id);
+CREATE INDEX idx_products_origin ON products(origin);
+CREATE INDEX idx_products_active ON products(active);
+CREATE INDEX idx_products_perishable ON products(perishable);
+
+CREATE INDEX idx_shelf_life_product ON product_shelf_life_rules(product_id);
+CREATE INDEX idx_shelf_life_condition ON product_shelf_life_rules(condition_type);
+
+CREATE INDEX idx_batches_product ON inventory_batches(product_id);
+CREATE INDEX idx_batches_supplier ON inventory_batches(supplier_id);
+CREATE INDEX idx_batches_expiration ON inventory_batches(expiration_date);
+CREATE INDEX idx_batches_status ON inventory_batches(batch_status);
+CREATE INDEX idx_batches_current_quantity ON inventory_batches(current_quantity);
+
+CREATE INDEX idx_movements_product ON stock_movements(product_id);
+CREATE INDEX idx_movements_batch ON stock_movements(batch_id);
+CREATE INDEX idx_movements_user ON stock_movements(user_id);
+CREATE INDEX idx_movements_type ON stock_movements(movement_type);
+CREATE INDEX idx_movements_date ON stock_movements(movement_date);
+
+CREATE INDEX idx_waste_product ON waste_records(product_id);
+CREATE INDEX idx_waste_batch ON waste_records(batch_id);
+CREATE INDEX idx_waste_reason ON waste_records(reason);
+CREATE INDEX idx_waste_date ON waste_records(waste_date);
+
+CREATE INDEX idx_promotions_product ON promotions(product_id);
+CREATE INDEX idx_promotions_batch ON promotions(batch_id);
+CREATE INDEX idx_promotions_status ON promotions(status);
+CREATE INDEX idx_promotions_dates ON promotions(start_date, end_date);
+
+CREATE INDEX idx_alerts_type ON alerts(alert_type);
+CREATE INDEX idx_alerts_status ON alerts(status);
+CREATE INDEX idx_alerts_product ON alerts(product_id);
+CREATE INDEX idx_alerts_batch ON alerts(batch_id);
+
+-- =========================================================
+-- DATOS MOCK
+-- =========================================================
+
+-- -------------------------------------------------------
+-- USUARIOS
+-- Las contraseñas en producción deben ser BCrypt; estos valores
+-- en texto plano NO funcionarán con la autenticación JWT real.
+-- Para el mock de desarrollo, usar la contraseña hasheada de '1234'
 -- con BCrypt: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LXng73I.9iS
 --
 -- IMPORTANTE: Si querés registrar usuarios reales, usá POST /auth/register
