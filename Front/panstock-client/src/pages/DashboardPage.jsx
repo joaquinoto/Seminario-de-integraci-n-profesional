@@ -29,13 +29,9 @@ export default function DashboardPage() {
       {/* Top bar */}
       <header className="dash-topbar">
         <div className="dash-brand">
-          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-            <path d="M4 22c0-8 4-14 12-14s12 6 12 14" stroke="var(--amber)" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M8 22c0-5 2-9 8-9s8 4 8 9" stroke="var(--espresso)" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M12 22c0-2 1-4 4-4s4 2 4 4" fill="var(--amber)"/>
-            <line x1="16" y1="4" x2="16" y2="10" stroke="var(--amber)" strokeWidth="2" strokeLinecap="round"/>
-            <circle cx="16" cy="3" r="1.5" fill="var(--amber)"/>
-          </svg>
+          <div>
+            <img src="/logo_panstock.png" alt="Logo" width="70" height="70" className="me-2"/>
+          </div>
           <span>PanStock</span>
         </div>
         <button className="logout-btn" onClick={handleLogout}>
