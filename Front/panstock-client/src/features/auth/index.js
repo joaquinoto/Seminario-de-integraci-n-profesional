@@ -1,4 +1,3 @@
-// features/auth/index.js
 export {
   default as authReducer,
   loginUser,

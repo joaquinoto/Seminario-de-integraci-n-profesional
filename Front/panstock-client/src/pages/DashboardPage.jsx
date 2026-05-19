@@ -1,7 +1,3 @@
-// pages/DashboardPage.jsx
-// Placeholder dashboard — shows authenticated user info
-// Will be fully built in the next delivery
-
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { selectUser } from '../features/auth/authSlice';

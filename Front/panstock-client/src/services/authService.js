@@ -1,8 +1,5 @@
-// services/authService.js
 // Centralizes all auth-related API calls to the PanStock backend
-
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081';
-
 const handleResponse = async (response) => {
   const data = await response.json();
   

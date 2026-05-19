@@ -1,4 +1,3 @@
-// components/ui/FormField.jsx
 import { useState } from 'react';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
