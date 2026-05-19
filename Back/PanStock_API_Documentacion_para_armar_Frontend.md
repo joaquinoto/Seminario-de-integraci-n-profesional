@@ -9,12 +9,18 @@ También, se debe actualizar el usuario y contaraseña (segun corresponda) en el
 ## Consideraciones
 
 
-| Columna 1 | Columna 2 | Columna 3 |
+| Endpoint | Debería poder | Actualmente puede |
 | :--- | :---: | ---: |
-| Fila 1, Dato 1 | Fila 1, Dato 2 | Fila 1, Dato 3 |
-| Fila 2, Dato 1 | Fila 2, Dato 2 | Fila 2, Dato 3 |
-
-
+| POST /api/stock/entries | OWNER y EMPLOYEE | OWNER y EMPLOYEE ✓|
+| POST /api/waste-records | OWNER y EMPLOYEE | OWNER y EMPLOYEE ✓|
+| POST /api/stock/sales   | OWNER y EMPLOYEE | OWNER y EMPLOYEE ✓|
+| DELETE /api/suppliers/{id} | solo OWNER | solo OWNER ✓|
+| POST /api/suppliers     | solo OWNER | solo OWNER ✓|
+| PUT /api/suppliers/{id} | solo OWNER | solo OWNER ✓|
+| DELETE /api/categories/{id} | solo OWNER | solo OWNER ✓|
+| PUT /api/settings/** | solo OWNER | solo OWNER ✓|
+| GET /api/reports/** | solo OWNER | solo OWNER ✓|
+| POST /api/promotions | solo OWNER | solo OWNER ✓|
 
 ## 1. Objetivo de este documento
 
