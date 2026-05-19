@@ -858,7 +858,7 @@ GET /api/users
 | Parámetro | Tipo | Ejemplo |
 |---|---|---|
 | `enabledOnly` | boolean | `true` |
-| `role` | Role | `MANAGER` |
+| `role` | Role | `OWNER` |
 
 Ejemplos:
 
@@ -967,7 +967,8 @@ Token: {{access_token}}
 
 ## 11.5. Actualizar usuario
 
-```PUT http://localhost:8081/users/update
+```http
+PUT http://localhost:8081/users/update
 Authorization: Bearer <tu_token>
 Content-Type: application/json
 
@@ -987,7 +988,8 @@ El servidor va a ignorar role y username aunque los mandes. Solo va a actualizar
 
 ## 11.6. Deshabilitar usuario
 
-```PATCH http://localhost:8081/users/4/disable
+```http 
+PATCH http://localhost:8081/users/4/disable
 Authorization: Bearer <token_de_lorena>
 ```
 ---
