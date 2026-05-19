@@ -17,7 +17,12 @@ public interface UserJpaRepository extends JpaRepository<User, Long> {
     List<User> findByEnabledTrueAndRoleOrderByLastNameAscFirstNameAsc(Role role);
 
     boolean existsByEmailIgnoreCase(String email);
-
+    /**
+     * Verifica si existe otro usuario con el mismo email,
+     * excluyendo al usuario con el id indicado.
+     * Se usa en updateUser para no bloquear al usuario
+     * si su email no cambió.
+     */
     boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
 
     @Query("SELECT u FROM User u WHERE u.username = ?1")

@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,31 +58,22 @@ public class UserController {
         }
     }
     
-    @PutMapping("/update")
-    public ResponseEntity<ResponseData<?>> updateUser(@AuthenticationPrincipal UserDetails userDetails, @RequestBody UserDTO userDTO) {
+   @PutMapping("/update")
+    public ResponseEntity<ResponseData<?>> updateUser(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody UserDTO userDTO) {
         try {
             User authUser = userService.getUserByUsername(userDetails.getUsername());
+            User updatedUser = userService.updateUser(authUser, userDTO);
+            return ResponseEntity.ok(ResponseData.success(updatedUser.toDTO()));
 
-            User user = userDTO.toEntity();
-
-            authUser.updateData(user);
-
-            String password = user.getPassword();
-
-            if(!password.equals("null")) authUser.setPassword(passwordEncoder.encode(password));
-
-                User updatedUser = userService.updateUser(authUser);
-
-                UserDTO updatedUserDTO = updatedUser.toDTO();
-
-                return ResponseEntity.status(HttpStatus.OK).body(ResponseData.success(updatedUserDTO));
-
-            }catch (UserException error) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ResponseData.error(error.getMessage()));
-      
-            } catch (Exception error) {
-                System.out.printf("[UserController.updateUser] -> %s", error.getMessage() );
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ResponseData.error("No se pudo actualizar el usuario"));
+        } catch (UserException error) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ResponseData.error(error.getMessage()));
+        } catch (Exception error) {
+            System.out.printf("[UserController.updateUser] -> %s%n", error.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ResponseData.error("No se pudo actualizar el usuario."));
         }
     }
     
@@ -93,6 +85,29 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    
+    // -------------------------------------------------------
+    // PATCH /users/{userId}/disable  →  deshabilitar un EMPLOYEE
+    //
+    // Solo un OWNER autenticado puede llamar a este endpoint.
+    // No se puede deshabilitar a un OWNER (ni a sí mismo).
+    // Devuelve 204 No Content si tuvo éxito.
+    // -------------------------------------------------------
+    @PatchMapping("/{userId}/disable")
+    public ResponseEntity<ResponseData<?>> disableEmployee(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long userId) {
+        try {
+            User requestingUser = userService.getUserByUsername(userDetails.getUsername());
+            userService.disableEmployee(requestingUser, userId);
+            return ResponseEntity.noContent().build();
 
+        } catch (UserException error) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ResponseData.error(error.getMessage()));
+        } catch (Exception error) {
+            System.out.printf("[UserController.disableEmployee] -> %s%n", error.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ResponseData.error("No se pudo deshabilitar el usuario."));
+        }
+    }
 }
