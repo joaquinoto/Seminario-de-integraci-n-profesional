@@ -3,9 +3,9 @@ import { useNavigate, NavLink } from 'react-router-dom';
 import { logout, selectUser } from '../../features/auth/authSlice';
 
 const NAV_ITEMS = [
-  { to: '/dashboard',   label: 'Dashboard', icon: '🏠' },
-  { to: '/products',    label: 'Productos',  icon: '🥐' },
-  { to: '/categories',  label: 'Categorías', icon: '🗂'  },
+  { to: '/dashboard',   label: 'Dashboard',  icon: '🏠' },
+  { to: '/products',    label: 'Productos',   icon: '🥐' },
+  { to: '/categories',  label: 'Categorías',  icon: '🗂'  },
 ];
 
 export default function AppTopbar() {
@@ -133,8 +133,6 @@ export default function AppTopbar() {
           transition: all var(--transition-fast);
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
-
-        .hide-mobile { }
 
         @media (max-width: 640px) {
           .hide-mobile { display: none; }

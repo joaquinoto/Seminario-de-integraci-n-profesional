@@ -8,13 +8,26 @@ import {
 } from '../../features/catalog/productsSlice';
 import { selectToken } from '../../features/auth/authSlice';
 import { selectActiveCategories } from '../../features/catalog/categoriesSlice';
+import { selectActiveSuppliers } from '../../features/catalog/suppliersSlice';
 import { Alert } from '../ui/FormField';
 
-// Enums from backend
-const ORIGINS   = ['FRANCHISE', 'EXTERNAL'];
+// Enums matching backend exactly (from UnitType.java)
+const ORIGINS    = ['FRANCHISE', 'EXTERNAL'];
 const UNIT_TYPES = ['UNIT', 'KG', 'GRAM', 'TRAY', 'BAG', 'LITER', 'PACK'];
-const ORIGIN_LABELS = { FRANCHISE: '🏷 Franquicia', EXTERNAL: '🌐 Externo' };
-const UNIT_LABELS   = { UNIT: 'Unidad', KG: 'Kilogramo', GRAM: 'Gramo', TRAY: 'Bandeja', BAG: 'Bolsa', LITER: 'Litro', PACK: 'Pack' };
+
+const ORIGIN_LABELS = {
+  FRANCHISE: '🏷 Franquicia',
+  EXTERNAL:  '🌐 Externo',
+};
+const UNIT_LABELS = {
+  UNIT:  'Unidad',
+  KG:    'Kilogramo',
+  GRAM:  'Gramo',
+  TRAY:  'Bandeja',
+  BAG:   'Bolsa',
+  LITER: 'Litro',
+  PACK:  'Pack',
+};
 
 const EMPTY = {
   name: '', description: '',
@@ -25,7 +38,6 @@ const EMPTY = {
   active: true,
 };
 
-// Reusable small field
 function Field({ label, error, children }) {
   return (
     <div className="pf-field">
@@ -36,30 +48,32 @@ function Field({ label, error, children }) {
   );
 }
 
-export default function ProductForm({ product = null, suppliers = [], onSuccess, onCancel }) {
+export default function ProductForm({ product = null, onSuccess, onCancel }) {
   const dispatch          = useDispatch();
   const token             = useSelector(selectToken);
   const categories        = useSelector(selectActiveCategories);
+  const suppliers         = useSelector(selectActiveSuppliers);
   const { status, error } = useSelector(selectProductAction);
   const isEdit            = Boolean(product);
 
-  const [form, setForm]         = useState(EMPTY);
-  const [fieldErrors, setFE]    = useState({});
+  const [form, setForm]      = useState(EMPTY);
+  const [fieldErrors, setFE] = useState({});
 
+  // Populate form when editing
   useEffect(() => {
     if (product) {
       setForm({
-        name:               product.name || '',
-        description:        product.description || '',
-        categoryId:         product.categoryId ?? '',
-        defaultSupplierId:  product.defaultSupplierId ?? '',
-        origin:             product.origin || 'FRANCHISE',
-        perishable:         product.perishable !== undefined ? product.perishable : true,
-        unitType:           product.unitType || 'UNIT',
-        costPrice:          product.costPrice ?? '',
-        salePrice:          product.salePrice ?? '',
-        minimumStock:       product.minimumStock ?? '',
-        active:             product.active !== undefined ? product.active : true,
+        name:              product.name || '',
+        description:       product.description || '',
+        categoryId:        product.categoryId ?? '',
+        defaultSupplierId: product.defaultSupplierId ?? '',
+        origin:            product.origin || 'FRANCHISE',
+        perishable:        product.perishable !== undefined ? product.perishable : true,
+        unitType:          product.unitType || 'UNIT',
+        costPrice:         product.costPrice ?? '',
+        salePrice:         product.salePrice ?? '',
+        minimumStock:      product.minimumStock ?? '',
+        active:            product.active !== undefined ? product.active : true,
       });
     } else {
       setForm(EMPTY);
@@ -68,6 +82,7 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
     dispatch(clearProductActionState());
   }, [product, dispatch]);
 
+  // Close on success
   useEffect(() => {
     if (status === 'succeeded') {
       dispatch(clearProductActionState());
@@ -77,13 +92,13 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'El nombre es obligatorio';
-    if (!form.categoryId) e.categoryId = 'La categoría es obligatoria';
-    if (!form.origin) e.origin = 'El origen es obligatorio';
-    if (!form.unitType) e.unitType = 'La unidad es obligatoria';
-    if (form.costPrice !== '' && isNaN(Number(form.costPrice))) e.costPrice = 'Debe ser un número';
-    if (form.salePrice !== '' && isNaN(Number(form.salePrice))) e.salePrice = 'Debe ser un número';
-    if (form.minimumStock !== '' && isNaN(Number(form.minimumStock))) e.minimumStock = 'Debe ser un número';
+    if (!form.name.trim())  e.name       = 'El nombre es obligatorio';
+    if (!form.categoryId)   e.categoryId = 'La categoría es obligatoria';
+    if (!form.origin)       e.origin     = 'El origen es obligatorio';
+    if (!form.unitType)     e.unitType   = 'La unidad es obligatoria';
+    if (form.costPrice    !== '' && (isNaN(Number(form.costPrice))    || Number(form.costPrice)    < 0)) e.costPrice    = 'Debe ser un número positivo';
+    if (form.salePrice    !== '' && (isNaN(Number(form.salePrice))    || Number(form.salePrice)    < 0)) e.salePrice    = 'Debe ser un número positivo';
+    if (form.minimumStock !== '' && (isNaN(Number(form.minimumStock)) || Number(form.minimumStock) < 0)) e.minimumStock = 'Debe ser un número positivo';
     return e;
   };
 
@@ -93,7 +108,7 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
     if (fieldErrors[field]) setFE((p) => ({ ...p, [field]: undefined }));
   };
 
-  const toNum = (v) => (v === '' || v === null ? null : Number(v));
+  const toNum = (v) => (v === '' || v === null || v === undefined) ? null : Number(v);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -127,18 +142,22 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
     <form onSubmit={handleSubmit} noValidate className="pf-form">
       {error && <Alert type="error">{error}</Alert>}
 
-      {/* Row 1 */}
+      {/* Row 1: Name + Category */}
       <div className="pf-grid-2">
         <Field label="Nombre *" error={fieldErrors.name}>
-          <input className={`pf-input ${fieldErrors.name ? 'err' : ''}`}
+          <input
+            className={`pf-input ${fieldErrors.name ? 'err' : ''}`}
             type="text" placeholder="Ej: Medialunas de manteca"
             value={form.name} onChange={handleChange('name')}
-            disabled={isLoading} autoFocus />
+            disabled={isLoading} autoFocus
+          />
         </Field>
         <Field label="Categoría *" error={fieldErrors.categoryId}>
-          <select className={`pf-select ${fieldErrors.categoryId ? 'err' : ''}`}
+          <select
+            className={`pf-select ${fieldErrors.categoryId ? 'err' : ''}`}
             value={form.categoryId} onChange={handleChange('categoryId')}
-            disabled={isLoading}>
+            disabled={isLoading}
+          >
             <option value="">— Seleccionar —</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -147,34 +166,46 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
         </Field>
       </div>
 
-      {/* Descripción */}
+      {/* Description */}
       <Field label="Descripción">
-        <textarea className="pf-textarea"
+        <textarea
+          className="pf-textarea"
           placeholder="Descripción opcional..."
           value={form.description} onChange={handleChange('description')}
-          disabled={isLoading} rows={2} />
+          disabled={isLoading} rows={2}
+        />
       </Field>
 
-      {/* Row 2 */}
+      {/* Row 2: Origin + Unit + Supplier */}
       <div className="pf-grid-3">
         <Field label="Origen *" error={fieldErrors.origin}>
-          <select className={`pf-select ${fieldErrors.origin ? 'err' : ''}`}
+          <select
+            className={`pf-select ${fieldErrors.origin ? 'err' : ''}`}
             value={form.origin} onChange={handleChange('origin')}
-            disabled={isLoading}>
-            {ORIGINS.map((o) => <option key={o} value={o}>{ORIGIN_LABELS[o]}</option>)}
+            disabled={isLoading}
+          >
+            {ORIGINS.map((o) => (
+              <option key={o} value={o}>{ORIGIN_LABELS[o]}</option>
+            ))}
           </select>
         </Field>
-        <Field label="Unidad de medida *" error={fieldErrors.unitType}>
-          <select className={`pf-select ${fieldErrors.unitType ? 'err' : ''}`}
+        <Field label="Unidad *" error={fieldErrors.unitType}>
+          <select
+            className={`pf-select ${fieldErrors.unitType ? 'err' : ''}`}
             value={form.unitType} onChange={handleChange('unitType')}
-            disabled={isLoading}>
-            {UNIT_TYPES.map((u) => <option key={u} value={u}>{UNIT_LABELS[u]}</option>)}
+            disabled={isLoading}
+          >
+            {UNIT_TYPES.map((u) => (
+              <option key={u} value={u}>{UNIT_LABELS[u]}</option>
+            ))}
           </select>
         </Field>
         <Field label="Proveedor por defecto">
-          <select className="pf-select"
+          <select
+            className="pf-select"
             value={form.defaultSupplierId} onChange={handleChange('defaultSupplierId')}
-            disabled={isLoading}>
+            disabled={isLoading}
+          >
             <option value="">— Ninguno —</option>
             {suppliers.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
@@ -183,43 +214,53 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
         </Field>
       </div>
 
-      {/* Row 3 — Prices */}
+      {/* Row 3: Prices + stock */}
       <div className="pf-grid-3">
         <Field label="Costo unitario ($)" error={fieldErrors.costPrice}>
-          <input className={`pf-input ${fieldErrors.costPrice ? 'err' : ''}`}
+          <input
+            className={`pf-input ${fieldErrors.costPrice ? 'err' : ''}`}
             type="number" min="0" step="0.01" placeholder="0.00"
             value={form.costPrice} onChange={handleChange('costPrice')}
-            disabled={isLoading} />
+            disabled={isLoading}
+          />
         </Field>
         <Field label="Precio de venta ($)" error={fieldErrors.salePrice}>
-          <input className={`pf-input ${fieldErrors.salePrice ? 'err' : ''}`}
+          <input
+            className={`pf-input ${fieldErrors.salePrice ? 'err' : ''}`}
             type="number" min="0" step="0.01" placeholder="0.00"
             value={form.salePrice} onChange={handleChange('salePrice')}
-            disabled={isLoading} />
+            disabled={isLoading}
+          />
         </Field>
         <Field label="Stock mínimo" error={fieldErrors.minimumStock}>
-          <input className={`pf-input ${fieldErrors.minimumStock ? 'err' : ''}`}
+          <input
+            className={`pf-input ${fieldErrors.minimumStock ? 'err' : ''}`}
             type="number" min="0" step="0.001" placeholder="0"
             value={form.minimumStock} onChange={handleChange('minimumStock')}
-            disabled={isLoading} />
+            disabled={isLoading}
+          />
         </Field>
       </div>
 
       {/* Toggles */}
       <div className="pf-toggles">
         <label className="pf-toggle-row">
-          <input type="checkbox" className="pf-checkbox"
+          <input
+            type="checkbox" className="pf-checkbox"
             checked={form.perishable} onChange={handleChange('perishable')}
-            disabled={isLoading} />
+            disabled={isLoading}
+          />
           <div>
             <span className="pf-toggle-title">⏰ Perecedero</span>
             <span className="pf-toggle-hint">Requiere fecha de vencimiento al ingresar stock</span>
           </div>
         </label>
         <label className="pf-toggle-row">
-          <input type="checkbox" className="pf-checkbox"
+          <input
+            type="checkbox" className="pf-checkbox"
             checked={form.active} onChange={handleChange('active')}
-            disabled={isLoading} />
+            disabled={isLoading}
+          />
           <div>
             <span className="pf-toggle-title">✅ Activo</span>
             <span className="pf-toggle-hint">El producto aparece en listados y operaciones</span>
@@ -275,10 +316,12 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
           background: var(--cream); border: 1.5px solid var(--cream-dark);
           cursor: pointer; transition: border-color var(--transition-fast);
         }
-        .pf-toggle-row:has(.pf-checkbox:checked) { border-color: var(--amber); background: rgba(200,137,58,0.05); }
+        .pf-toggle-row:has(.pf-checkbox:checked) {
+          border-color: var(--amber); background: rgba(200,137,58,0.05);
+        }
         .pf-checkbox { width: 18px; height: 18px; accent-color: var(--amber); margin-top: 2px; cursor: pointer; flex-shrink: 0; }
-        .pf-toggle-title  { display: block; font-weight: 600; font-size: 0.88rem; color: var(--espresso); }
-        .pf-toggle-hint   { display: block; font-size: 0.75rem; color: var(--warm-gray); line-height: 1.4; margin-top: 2px; }
+        .pf-toggle-title { display: block; font-weight: 600; font-size: 0.88rem; color: var(--espresso); }
+        .pf-toggle-hint  { display: block; font-size: 0.75rem; color: var(--warm-gray); line-height: 1.4; margin-top: 2px; }
 
         .pf-actions {
           display: flex; gap: 10px; justify-content: flex-end;
@@ -298,7 +341,8 @@ export default function ProductForm({ product = null, suppliers = [], onSuccess,
           font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
           cursor: pointer; transition: all var(--transition-fast);
           box-shadow: var(--shadow-amber);
-          display: flex; align-items: center; gap: 8px; min-width: 150px; justify-content: center;
+          display: flex; align-items: center; gap: 8px;
+          min-width: 150px; justify-content: center;
         }
         .pf-submit:hover:not(:disabled) { background: var(--amber-dark); transform: translateY(-1px); }
         .pf-submit:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -68,38 +68,38 @@ const categoriesSlice = createSlice({
   extraReducers: (builder) => {
     // fetch
     builder
-      .addCase(fetchCategories.pending, (s) => { s.status = 'loading'; s.error = null; })
+      .addCase(fetchCategories.pending,   (s) => { s.status = 'loading'; s.error = null; })
       .addCase(fetchCategories.fulfilled, (s, a) => { s.status = 'succeeded'; s.items = a.payload; })
-      .addCase(fetchCategories.rejected, (s, a) => { s.status = 'failed'; s.error = a.payload; });
+      .addCase(fetchCategories.rejected,  (s, a) => { s.status = 'failed'; s.error = a.payload; });
 
     // create
     builder
-      .addCase(createCategory.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(createCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(createCategory.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         s.items.push(a.payload);
       })
-      .addCase(createCategory.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(createCategory.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
     // update
     builder
-      .addCase(updateCategory.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(updateCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(updateCategory.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         const idx = s.items.findIndex((c) => c.id === a.payload.id);
         if (idx !== -1) s.items[idx] = a.payload;
       })
-      .addCase(updateCategory.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(updateCategory.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
     // delete (logical — sets active:false)
     builder
-      .addCase(deleteCategory.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(deleteCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(deleteCategory.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         const idx = s.items.findIndex((c) => c.id === a.payload);
         if (idx !== -1) s.items[idx] = { ...s.items[idx], active: false };
       })
-      .addCase(deleteCategory.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(deleteCategory.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
   },
 });
 
@@ -110,6 +110,9 @@ export const selectCategories       = (s) => s.categories.items;
 export const selectActiveCategories = (s) => s.categories.items.filter((c) => c.active);
 export const selectCategoriesStatus = (s) => s.categories.status;
 export const selectCategoriesError  = (s) => s.categories.error;
-export const selectCategoryAction   = (s) => ({ status: s.categories.actionStatus, error: s.categories.actionError });
+export const selectCategoryAction   = (s) => ({
+  status: s.categories.actionStatus,
+  error:  s.categories.actionError,
+});
 
 export default categoriesSlice.reducer;

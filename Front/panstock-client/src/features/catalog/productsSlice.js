@@ -72,38 +72,38 @@ const productsSlice = createSlice({
   extraReducers: (builder) => {
     // fetch
     builder
-      .addCase(fetchProducts.pending, (s) => { s.status = 'loading'; s.error = null; })
+      .addCase(fetchProducts.pending,   (s) => { s.status = 'loading'; s.error = null; })
       .addCase(fetchProducts.fulfilled, (s, a) => { s.status = 'succeeded'; s.items = a.payload; })
-      .addCase(fetchProducts.rejected, (s, a) => { s.status = 'failed'; s.error = a.payload; });
+      .addCase(fetchProducts.rejected,  (s, a) => { s.status = 'failed'; s.error = a.payload; });
 
     // create
     builder
-      .addCase(createProduct.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(createProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(createProduct.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         s.items.push(a.payload);
       })
-      .addCase(createProduct.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(createProduct.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
     // update
     builder
-      .addCase(updateProduct.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(updateProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(updateProduct.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         const idx = s.items.findIndex((p) => p.id === a.payload.id);
         if (idx !== -1) s.items[idx] = a.payload;
       })
-      .addCase(updateProduct.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(updateProduct.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
-    // delete
+    // delete (logical)
     builder
-      .addCase(deleteProduct.pending, (s) => { s.actionStatus = 'loading'; s.actionError = null; })
+      .addCase(deleteProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(deleteProduct.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         const idx = s.items.findIndex((p) => p.id === a.payload);
         if (idx !== -1) s.items[idx] = { ...s.items[idx], active: false };
       })
-      .addCase(deleteProduct.rejected, (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+      .addCase(deleteProduct.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
   },
 });
 
@@ -114,6 +114,9 @@ export const selectProducts       = (s) => s.products.items;
 export const selectProductFilters = (s) => s.products.filters;
 export const selectProductsStatus = (s) => s.products.status;
 export const selectProductsError  = (s) => s.products.error;
-export const selectProductAction  = (s) => ({ status: s.products.actionStatus, error: s.products.actionError });
+export const selectProductAction  = (s) => ({
+  status: s.products.actionStatus,
+  error:  s.products.actionError,
+});
 
 export default productsSlice.reducer;
