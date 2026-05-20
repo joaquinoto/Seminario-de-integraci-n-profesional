@@ -1,13 +1,6 @@
 # PanStock-client
 
-## Resumen
-
-Este entregable completa la lógica de **Productos** y **Categorías** en el frontend, registra todos los reducers en Redux (con persist), y corrige el `SecurityConfig.java` del backend.
-
----
-
-## 1. Backend — `SecurityConfig.java` 
-
+## Correcciones en el `SecurityConfig.java` del backend:
 ### Accesos
 Todos los GET de productos, categorías y proveedores tienen `permitAll()` a `authenticated()`:
 
@@ -30,17 +23,13 @@ Todos los GET de productos, categorías y proveedores tienen `permitAll()` a `au
 .requestMatchers(HttpMethod.PUT,    "/api/suppliers/**").hasAuthority(Role.OWNER.name())
 .requestMatchers(HttpMethod.DELETE, "/api/suppliers/**").hasAuthority(Role.OWNER.name())
 ```
-
-> **`application.properties` no requiere cambios** — la configuración de DB, JPA y JWT está correcta.
-
 ---
 
 ## 2. Frontend — Archivo por archivo
 
-### `src/store/store.js` ✅ CORREGIDO
-**Problema original:** Solo registraba `authReducer`. Los slices de `categories`, `products` y `suppliers` existían pero **nunca se conectaban al store**, por lo que cualquier `useSelector` de esos slices lanzaba un error de runtime.
+### `src/store/store.js`
 
-**Corrección:** Se importan y registran los tres reducers con sus propias configuraciones de `redux-persist`:
+Se importan y registran los reducers con sus propias configuraciones de `redux-persist`:
 - `auth` → persiste `token`, `user`, `isAuthenticated`
 - `categories` → persiste `items` (la lista cargada)
 - `products` → persiste `items` y `filters`
@@ -57,21 +46,7 @@ Los campos `actionStatus` y `actionError` son estado efímero de UI y se excluye
 
 ---
 
-### `src/features/catalog/categoriesSlice.js` 
-Sin cambios de lógica — el slice original estaba correcto. Se mantiene igual con documentación mejorada.
-
-### `src/features/catalog/productsSlice.js`
-Sin cambios de lógica — el slice original estaba correcto.
-
-### `src/features/catalog/suppliersSlice.js` ✅ REVISADO
-Sin cambios de lógica.
-
----
-
-### `src/pages/CategoriesPage.jsx` ✅ COMPLETADO
-La lógica de roles estaba presente pero el store no registraba el reducer, así que nunca funcionaba.
-
-Con el store corregido, la página ahora funciona completamente:
+### `src/pages/CategoriesPage.jsx` 
 
 | Acción | OWNER | EMPLOYEE |
 |--------|-------|----------|
@@ -85,8 +60,7 @@ Con el store corregido, la página ahora funciona completamente:
 
 ---
 
-### `src/pages/ProductsPage.jsx` ✅ COMPLETADO
-Misma lógica de roles:
+### `src/pages/ProductsPage.jsx` 
 
 | Acción | OWNER | EMPLOYEE |
 |--------|-------|----------|
@@ -100,39 +74,8 @@ Misma lógica de roles:
 
 ---
 
-### `src/components/catalog/CategoryForm.jsx` ✅ REVISADO
-Sin cambios de lógica — solo se llama desde CategoriesPage que ya verifica el rol OWNER.
-
-### `src/components/catalog/ProductForm.jsx` ✅ REVISADO
+### `src/components/catalog/ProductForm.jsx` 
 - UnitTypes corregidos: `TRAY`, `BAG`, `PACK` en lugar de `PACKAGE` (según el enum Java real en `UnitType.java`)
 - Solo se llama desde ProductsPage que ya verifica el rol OWNER
 
 ---
-
-## 3. Cómo aplicar los cambios
-
-### Backend
-Reemplazar:
-```
-Back/panstock-api/src/main/java/com/panstock/api/controller/config/SecurityConfig.java
-```
-con el archivo en `backend-fix/SecurityConfig.java`.
-
-> **No tocar** `application.properties`.
-
-### Frontend
-Reemplazar en `FrontB/panstock-client/src/`:
-
-| Archivo entregado | Destino |
-|---|---|
-| `src/store/store.js` | `src/store/store.js` |
-| `src/services/catalogService.js` | `src/services/catalogService.js` |
-| `src/features/catalog/categoriesSlice.js` | `src/features/catalog/categoriesSlice.js` |
-| `src/features/catalog/productsSlice.js` | `src/features/catalog/productsSlice.js` |
-| `src/features/catalog/suppliersSlice.js` | `src/features/catalog/suppliersSlice.js` |
-| `src/pages/CategoriesPage.jsx` | `src/pages/CategoriesPage.jsx` |
-| `src/pages/ProductsPage.jsx` | `src/pages/ProductsPage.jsx` |
-| `src/components/catalog/CategoryForm.jsx` | `src/components/catalog/CategoryForm.jsx` |
-| `src/components/catalog/ProductForm.jsx` | `src/components/catalog/ProductForm.jsx` |
-
-Los archivos no listados (`App.jsx`, `LoginPage.jsx`, `RegisterPage.jsx`, `DashboardPage.jsx`, `AppTopbar.jsx`, `CatalogUI.jsx`, `FormField.jsx`, `authSlice.js`, `authService.js`, `main.jsx`, etc.) **no requieren cambios**.
