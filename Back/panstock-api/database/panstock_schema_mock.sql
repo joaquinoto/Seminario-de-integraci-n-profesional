@@ -255,7 +255,7 @@ INSERT INTO users (id, username, first_name, last_name, email, password, role, e
  '$2a$10$mSv6/GckMyWULmp27zj9XeH6raDO4o/wM2Y8teHyAfPqI0n9Eud.S',
  'EMPLOYEE', TRUE, NOW(), NOW()),
 (4, 'federico', 'Federico', 'Temporal',  'federico.temporal@panstock.local',
- '$$2a$10$mSv6/GckMyWULmp27zj9XeH6raDO4o/wM2Y8teHyAfPqI0n9Eud.S',
+ '$2a$10$mSv6/GckMyWULmp27zj9XeH6raDO4o/wM2Y8teHyAfPqI0n9Eud.S',
  'EMPLOYEE', FALSE, NOW(), NOW());
 
 -- -------------------------------------------------------
