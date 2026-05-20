@@ -15,18 +15,16 @@ import authReducer       from '../features/auth/authSlice';
 import categoriesReducer from '../features/catalog/categoriesSlice';
 import productsReducer   from '../features/catalog/productsSlice';
 import suppliersReducer  from '../features/catalog/suppliersSlice';
+import expirationReducer from '../features/stock/expirationSlice';
 
 // ─── Persist configs ──────────────────────────────────────────────────────────
 
-// Auth: persist token + user info across sessions
 const authPersistConfig = {
   key: 'panstock-auth',
   storage,
   whitelist: ['token', 'user', 'isAuthenticated'],
 };
 
-// Catalog: persist loaded lists so the UI doesn't flash on navigation
-// actionStatus/actionError are intentionally excluded (ephemeral UI state)
 const categoriesPersistConfig = {
   key: 'panstock-categories',
   storage,
@@ -45,6 +43,14 @@ const suppliersPersistConfig = {
   whitelist: ['items'],
 };
 
+// Expiration: solo persistir los conteos del badge del topbar,
+// no la lista completa (se refresca siempre al entrar a la página)
+const expirationPersistConfig = {
+  key: 'panstock-expiration',
+  storage,
+  whitelist: ['greenCount', 'yellowCount', 'redCount', 'expiredCount'],
+};
+
 // ─── Root Reducer ─────────────────────────────────────────────────────────────
 
 const rootReducer = combineReducers({
@@ -52,6 +58,7 @@ const rootReducer = combineReducers({
   categories: persistReducer(categoriesPersistConfig, categoriesReducer),
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
+  expiration: persistReducer(expirationPersistConfig, expirationReducer),
 });
 
 // ─── Store ────────────────────────────────────────────────────────────────────

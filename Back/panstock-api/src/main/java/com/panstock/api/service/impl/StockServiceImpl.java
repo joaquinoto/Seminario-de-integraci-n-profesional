@@ -109,12 +109,9 @@ public class StockServiceImpl implements StockService {
         List<StockMovement> createdMovements = new ArrayList<>();
 
         for (InventoryBatch batch : sellableBatches) {
-            if (remainingQuantity.compareTo(BigDecimal.ZERO) <= 0) {
-                break;
-            }
+            if (remainingQuantity.compareTo(BigDecimal.ZERO) <= 0) break;
 
             BigDecimal quantityToDiscount = batch.getCurrentQuantity().min(remainingQuantity);
-
             batch.setCurrentQuantity(batch.getCurrentQuantity().subtract(quantityToDiscount));
 
             if (batch.getCurrentQuantity().compareTo(BigDecimal.ZERO) == 0) {
@@ -131,9 +128,7 @@ public class StockServiceImpl implements StockService {
             movement.setQuantity(quantityToDiscount);
             movement.setNotes("Venta manual" + (request.notes() != null ? ": " + request.notes() : ""));
 
-            StockMovement savedMovement = stockMovementRepository.save(movement);
-            createdMovements.add(savedMovement);
-
+            createdMovements.add(stockMovementRepository.save(movement));
             remainingQuantity = remainingQuantity.subtract(quantityToDiscount);
         }
 
@@ -142,9 +137,7 @@ public class StockServiceImpl implements StockService {
                 product.getId(),
                 product.getName(),
                 request.quantity(),
-                createdMovements.stream()
-                        .map(StockMovementMapper::toResponse)
-                        .toList()
+                createdMovements.stream().map(StockMovementMapper::toResponse).toList()
         );
     }
 
@@ -168,11 +161,9 @@ public class StockServiceImpl implements StockService {
 
         if (request.adjustmentType() == StockAdjustmentType.IN) {
             batch.setCurrentQuantity(batch.getCurrentQuantity().add(request.quantity()));
-
             if (batch.getBatchStatus() == BatchStatus.DEPLETED) {
                 batch.setBatchStatus(BatchStatus.AVAILABLE);
             }
-
             movementType = StockMovementType.ADJUSTMENT_IN;
         } else if (request.adjustmentType() == StockAdjustmentType.OUT) {
             if (batch.getCurrentQuantity().compareTo(request.quantity()) < 0) {
@@ -181,13 +172,10 @@ public class StockServiceImpl implements StockService {
                                 + batch.getCurrentQuantity()
                 );
             }
-
             batch.setCurrentQuantity(batch.getCurrentQuantity().subtract(request.quantity()));
-
             if (batch.getCurrentQuantity().compareTo(BigDecimal.ZERO) == 0) {
                 batch.setBatchStatus(BatchStatus.DEPLETED);
             }
-
             movementType = StockMovementType.ADJUSTMENT_OUT;
         } else {
             throw new BadRequestException("Tipo de ajuste inválido.");
@@ -218,29 +206,18 @@ public class StockServiceImpl implements StockService {
     @Transactional(readOnly = true)
     public List<StockSummaryResponse> getStockSummary() {
         List<InventoryBatch> batches = inventoryBatchRepository.findAvailableWithStock();
-
         Map<Long, StockAccumulator> grouped = new LinkedHashMap<>();
 
         for (InventoryBatch batch : batches) {
             Product product = batch.getProduct();
-
             grouped.putIfAbsent(
                     product.getId(),
-                    new StockAccumulator(
-                            product.getId(),
-                            product.getName(),
-                            product.getOrigin(),
-                            product.getUnitType()
-                    )
+                    new StockAccumulator(product.getId(), product.getName(), product.getOrigin(), product.getUnitType())
             );
-
             grouped.get(product.getId()).addBatch(batch);
         }
 
-        return grouped.values()
-                .stream()
-                .map(StockAccumulator::toResponse)
-                .toList();
+        return grouped.values().stream().map(StockAccumulator::toResponse).toList();
     }
 
     @Override
@@ -248,10 +225,7 @@ public class StockServiceImpl implements StockService {
     public List<InventoryBatchResponse> getBatches() {
         return inventoryBatchRepository.findAll()
                 .stream()
-                .map(batch -> InventoryBatchMapper.toResponse(
-                        batch,
-                        calculateExpirationStatus(batch.getExpirationDate())
-                ))
+                .map(batch -> InventoryBatchMapper.toResponse(batch, calculateExpirationStatus(batch.getExpirationDate())))
                 .toList();
     }
 
@@ -260,24 +234,41 @@ public class StockServiceImpl implements StockService {
     public InventoryBatchResponse getBatchById(Long id) {
         InventoryBatch batch = inventoryBatchRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Lote no encontrado con id " + id));
-
-        return InventoryBatchMapper.toResponse(
-                batch,
-                calculateExpirationStatus(batch.getExpirationDate())
-        );
+        return InventoryBatchMapper.toResponse(batch, calculateExpirationStatus(batch.getExpirationDate()));
     }
 
+    /**
+     * FIX: el bug original era que getExpiring() filtraba con item.daysToExpire() <= alertDays
+     * pero alertDays venía del setting (2 días por defecto), lo que excluía lotes en GREEN
+     * que el dashboard necesita mostrar también.
+     *
+     * Ahora:
+     * - Sin parámetro `days` (null): devuelve TODOS los lotes con fecha de vencimiento
+     *   que no estén vencidos, ordenados por urgencia. El dashboard usa esto.
+     * - Con parámetro `days`: filtra a los que vencen dentro de N días (comportamiento original
+     *   para el endpoint /api/stock/expiring?days=N).
+     */
     @Override
     @Transactional(readOnly = true)
     public List<ExpirationItemResponse> getExpiring(Integer days) {
-        int alertDays = days != null ? days : getExpirationAlertDays();
+        List<InventoryBatch> batches = inventoryBatchRepository.findAvailableWithStock();
 
-        return inventoryBatchRepository.findAvailableWithStock()
-                .stream()
+        return batches.stream()
                 .filter(batch -> batch.getExpirationDate() != null)
                 .map(this::toExpirationItem)
-                .filter(item -> item.status() == ExpirationStatus.RED || item.status() == ExpirationStatus.YELLOW)
-                .filter(item -> item.daysToExpire() != null && item.daysToExpire() >= 0 && item.daysToExpire() <= alertDays)
+                // Solo los que NO están vencidos (EXPIRED se maneja en getExpired)
+                .filter(item -> item.status() != ExpirationStatus.EXPIRED)
+                // Si se pasa `days`, filtrar por ventana; si no, devolver todos
+                .filter(item -> {
+                    if (days == null) return true;
+                    return item.daysToExpire() != null
+                            && item.daysToExpire() >= 0
+                            && item.daysToExpire() <= days;
+                })
+                // Orden: RED → YELLOW → GREEN, luego por días ascendente
+                .sorted(Comparator
+                        .comparingInt((ExpirationItemResponse i) -> statusOrder(i.status()))
+                        .thenComparingLong(i -> i.daysToExpire() != null ? i.daysToExpire() : Long.MAX_VALUE))
                 .toList();
     }
 
@@ -289,33 +280,25 @@ public class StockServiceImpl implements StockService {
                 .filter(batch -> batch.getExpirationDate() != null)
                 .map(this::toExpirationItem)
                 .filter(item -> item.status() == ExpirationStatus.EXPIRED)
+                .sorted(Comparator.comparing(ExpirationItemResponse::expirationDate))
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public ExpirationStatus calculateExpirationStatus(LocalDate expirationDate) {
-        if (expirationDate == null) {
-            return ExpirationStatus.NOT_APPLICABLE;
-        }
+        if (expirationDate == null) return ExpirationStatus.NOT_APPLICABLE;
 
         LocalDate today = LocalDate.now();
         long daysToExpire = ChronoUnit.DAYS.between(today, expirationDate);
 
-        if (daysToExpire < 0) {
-            return ExpirationStatus.EXPIRED;
-        }
-
-        if (daysToExpire == 0) {
-            return ExpirationStatus.RED;
-        }
-
-        if (daysToExpire <= getExpirationAlertDays()) {
-            return ExpirationStatus.YELLOW;
-        }
-
+        if (daysToExpire < 0)  return ExpirationStatus.EXPIRED;
+        if (daysToExpire == 0) return ExpirationStatus.RED;
+        if (daysToExpire <= getExpirationAlertDays()) return ExpirationStatus.YELLOW;
         return ExpirationStatus.GREEN;
     }
+
+    // ─── Private helpers ────────────────────────────────────────────────────────
 
     private void validateStockEntry(Product product, StockEntryRequest request) {
         validateProductCanMoveStock(product);
@@ -346,21 +329,16 @@ public class StockServiceImpl implements StockService {
     }
 
     private User findUserIfPresent(Long userId) {
-        if (userId == null) {
-            return null;
-        }
-
+        if (userId == null) return null;
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado con id " + userId));
     }
 
     private ExpirationItemResponse toExpirationItem(InventoryBatch batch) {
         Long daysToExpire = null;
-
         if (batch.getExpirationDate() != null) {
             daysToExpire = ChronoUnit.DAYS.between(LocalDate.now(), batch.getExpirationDate());
         }
-
         return new ExpirationItemResponse(
                 batch.getId(),
                 batch.getProduct().getId(),
@@ -372,6 +350,16 @@ public class StockServiceImpl implements StockService {
         );
     }
 
+    private int statusOrder(ExpirationStatus status) {
+        return switch (status) {
+            case EXPIRED -> 0;
+            case RED     -> 1;
+            case YELLOW  -> 2;
+            case GREEN   -> 3;
+            default      -> 4;
+        };
+    }
+
     private int getExpirationAlertDays() {
         return appSettingRepository.findBySettingKey(EXPIRATION_ALERT_DAYS_KEY)
                 .map(AppSetting::getSettingValue)
@@ -379,8 +367,9 @@ public class StockServiceImpl implements StockService {
                 .orElse(DEFAULT_EXPIRATION_ALERT_DAYS);
     }
 
-    private static class StockAccumulator {
+    // ─── Inner accumulators ─────────────────────────────────────────────────────
 
+    private static class StockAccumulator {
         private final Long productId;
         private final String productName;
         private final ProductOrigin origin;
@@ -388,38 +377,25 @@ public class StockServiceImpl implements StockService {
         private BigDecimal totalQuantity = BigDecimal.ZERO;
         private LocalDate nearestExpirationDate;
 
-        private StockAccumulator(
-                Long productId,
-                String productName,
-                ProductOrigin origin,
-                UnitType unitType
-        ) {
-            this.productId = productId;
+        private StockAccumulator(Long productId, String productName, ProductOrigin origin, UnitType unitType) {
+            this.productId   = productId;
             this.productName = productName;
-            this.origin = origin;
-            this.unitType = unitType;
+            this.origin      = origin;
+            this.unitType    = unitType;
         }
 
         private void addBatch(InventoryBatch batch) {
             totalQuantity = totalQuantity.add(batch.getCurrentQuantity());
-
-            LocalDate expirationDate = batch.getExpirationDate();
-            if (expirationDate != null) {
-                if (nearestExpirationDate == null || expirationDate.isBefore(nearestExpirationDate)) {
-                    nearestExpirationDate = expirationDate;
+            LocalDate exp = batch.getExpirationDate();
+            if (exp != null) {
+                if (nearestExpirationDate == null || exp.isBefore(nearestExpirationDate)) {
+                    nearestExpirationDate = exp;
                 }
             }
         }
 
         private StockSummaryResponse toResponse() {
-            return new StockSummaryResponse(
-                    productId,
-                    productName,
-                    origin,
-                    unitType,
-                    totalQuantity,
-                    nearestExpirationDate
-            );
+            return new StockSummaryResponse(productId, productName, origin, unitType, totalQuantity, nearestExpirationDate);
         }
     }
 }
