@@ -54,25 +54,25 @@ const categoriesSlice = createSlice({
   name: 'categories',
   initialState: {
     items: [],
-    status: 'idle',   // idle | loading | succeeded | failed
+    status: 'idle',       // idle | loading | succeeded | failed
     error: null,
-    actionStatus: 'idle',
+    actionStatus: 'idle', // idle | loading | succeeded | failed
     actionError: null,
   },
   reducers: {
     clearCategoryActionState(state) {
       state.actionStatus = 'idle';
-      state.actionError = null;
+      state.actionError  = null;
     },
   },
   extraReducers: (builder) => {
-    // fetch
+    // ── fetch ──
     builder
       .addCase(fetchCategories.pending,   (s) => { s.status = 'loading'; s.error = null; })
       .addCase(fetchCategories.fulfilled, (s, a) => { s.status = 'succeeded'; s.items = a.payload; })
       .addCase(fetchCategories.rejected,  (s, a) => { s.status = 'failed'; s.error = a.payload; });
 
-    // create
+    // ── create ──
     builder
       .addCase(createCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(createCategory.fulfilled, (s, a) => {
@@ -81,7 +81,7 @@ const categoriesSlice = createSlice({
       })
       .addCase(createCategory.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
-    // update
+    // ── update ──
     builder
       .addCase(updateCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(updateCategory.fulfilled, (s, a) => {
@@ -91,7 +91,7 @@ const categoriesSlice = createSlice({
       })
       .addCase(updateCategory.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
-    // delete (logical — sets active:false)
+    // ── delete (logical: backend sets active=false) ──
     builder
       .addCase(deleteCategory.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(deleteCategory.fulfilled, (s, a) => {
@@ -105,7 +105,8 @@ const categoriesSlice = createSlice({
 
 export const { clearCategoryActionState } = categoriesSlice.actions;
 
-// selectors
+// ─── Selectors ────────────────────────────────────────────────────────────────
+
 export const selectCategories       = (s) => s.categories.items;
 export const selectActiveCategories = (s) => s.categories.items.filter((c) => c.active);
 export const selectCategoriesStatus = (s) => s.categories.status;

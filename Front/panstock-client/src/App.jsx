@@ -9,6 +9,7 @@ import RegisterPage   from './pages/RegisterPage';
 import DashboardPage  from './pages/DashboardPage';
 import ProductsPage   from './pages/ProductsPage';
 import CategoriesPage from './pages/CategoriesPage';
+import SuppliersPage  from './pages/SuppliersPage';
 
 // Token expiration guard — checks JWT exp on mount
 function TokenGuard() {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/dashboard"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/products"   element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
         <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
+        <Route path="/suppliers"  element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />
 
         {/* Root redirect */}
         <Route path="/"  element={<Navigate to={isAuth ? '/dashboard' : '/login'} replace />} />

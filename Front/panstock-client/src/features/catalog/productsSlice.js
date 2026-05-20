@@ -66,17 +66,17 @@ const productsSlice = createSlice({
     },
     clearProductActionState(state) {
       state.actionStatus = 'idle';
-      state.actionError = null;
+      state.actionError  = null;
     },
   },
   extraReducers: (builder) => {
-    // fetch
+    // ── fetch ──
     builder
       .addCase(fetchProducts.pending,   (s) => { s.status = 'loading'; s.error = null; })
       .addCase(fetchProducts.fulfilled, (s, a) => { s.status = 'succeeded'; s.items = a.payload; })
       .addCase(fetchProducts.rejected,  (s, a) => { s.status = 'failed'; s.error = a.payload; });
 
-    // create
+    // ── create ──
     builder
       .addCase(createProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(createProduct.fulfilled, (s, a) => {
@@ -85,7 +85,7 @@ const productsSlice = createSlice({
       })
       .addCase(createProduct.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
-    // update
+    // ── update ──
     builder
       .addCase(updateProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(updateProduct.fulfilled, (s, a) => {
@@ -95,7 +95,7 @@ const productsSlice = createSlice({
       })
       .addCase(updateProduct.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
-    // delete (logical)
+    // ── delete (logical: backend sets active=false) ──
     builder
       .addCase(deleteProduct.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(deleteProduct.fulfilled, (s, a) => {
@@ -109,7 +109,8 @@ const productsSlice = createSlice({
 
 export const { setProductFilters, clearProductActionState } = productsSlice.actions;
 
-// selectors
+// ─── Selectors ────────────────────────────────────────────────────────────────
+
 export const selectProducts       = (s) => s.products.items;
 export const selectProductFilters = (s) => s.products.filters;
 export const selectProductsStatus = (s) => s.products.status;

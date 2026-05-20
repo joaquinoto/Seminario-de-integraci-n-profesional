@@ -12,16 +12,27 @@ import {
   selectProductFilters,
 } from '../features/catalog/productsSlice';
 import { fetchCategories, selectCategories } from '../features/catalog/categoriesSlice';
-import { fetchSuppliers } from '../features/catalog/suppliersSlice';
-import { selectToken, selectUser } from '../features/auth/authSlice';
+import { fetchSuppliers }                    from '../features/catalog/suppliersSlice';
+import { selectToken, selectUser }           from '../features/auth/authSlice';
 import {
-  Modal, ConfirmDialog, StatusBadge, OriginBadge, EmptyState,
-  SectionHeader, FilterBar, ActionBtn, TableSkeleton, PrimaryBtn,
+  Modal,
+  ConfirmDialog,
+  StatusBadge,
+  OriginBadge,
+  EmptyState,
+  SectionHeader,
+  FilterBar,
+  ActionBtn,
+  TableSkeleton,
+  PrimaryBtn,
 } from '../components/ui/CatalogUI';
 import ProductForm from '../components/catalog/ProductForm';
 import AppTopbar   from '../components/layout/AppTopbar';
 
+// Guard helper
 const isOwner = (user) => user?.role === 'OWNER';
+
+// ─── Display helpers ──────────────────────────────────────────────────────────
 
 const UNIT_LABELS = {
   UNIT: 'Unid.', KG: 'kg', GRAM: 'g',
@@ -35,51 +46,69 @@ const formatARS = (v) =>
       }).format(v)
     : '—';
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ProductsPage() {
-  const dispatch  = useDispatch();
-  const token     = useSelector(selectToken);
-  const user      = useSelector(selectUser);
-  const items     = useSelector(selectProducts);
-  const status    = useSelector(selectProductsStatus);
-  const fetchErr  = useSelector(selectProductsError);
-  const filters   = useSelector(selectProductFilters);
-  const categories= useSelector(selectCategories);
+  const dispatch   = useDispatch();
+  const token      = useSelector(selectToken);
+  const user       = useSelector(selectUser);
+  const items      = useSelector(selectProducts);
+  const status     = useSelector(selectProductsStatus);
+  const fetchErr   = useSelector(selectProductsError);
+  const filters    = useSelector(selectProductFilters);
+  const categories = useSelector(selectCategories);
   const { status: actStatus } = useSelector(selectProductAction);
 
-  const [search,    setSearch]    = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing,   setEditing]   = useState(null);
-  const [confirmId, setConfirmId] = useState(null);
-  const [expandedId,setExpanded]  = useState(null);
+  const [search,     setSearch]     = useState('');
+  const [modalOpen,  setModalOpen]  = useState(false);
+  const [editing,    setEditing]    = useState(null);   // null = create, object = edit
+  const [confirmId,  setConfirmId]  = useState(null);   // id to deactivate
+  const [expandedId, setExpandedId] = useState(null);   // detail row
 
-  // Fetch everything on mount
+  // ── Initial fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
+    // Load all products (incl. inactive) for client-side filtering
     dispatch(fetchProducts({ token, params: { activeOnly: false } }));
-    dispatch(fetchCategories({ token }));
+    // Categories needed for the filter dropdown + the ProductForm selects
+    dispatch(fetchCategories({ token, activeOnly: false }));
+    // Suppliers needed for the ProductForm select
     dispatch(fetchSuppliers({ token, params: { activeOnly: true } }));
   }, [dispatch, token]);
 
-  // Client-side filtering
+  // ── Client-side filter ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...items];
-    if (filters.activeOnly) list = list.filter((p) => p.active);
-    if (filters.origin)     list = list.filter((p) => p.origin === filters.origin);
-    if (filters.categoryId) list = list.filter((p) => p.categoryId === Number(filters.categoryId));
+
+    if (filters.activeOnly)  list = list.filter((p) => p.active);
+    if (filters.origin)      list = list.filter((p) => p.origin === filters.origin);
+    if (filters.categoryId)  list = list.filter((p) => p.categoryId === Number(filters.categoryId));
+
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.description   || '').toLowerCase().includes(q) ||
-        (p.categoryName  || '').toLowerCase().includes(q) ||
-        (p.defaultSupplierName || '').toLowerCase().includes(q)
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.description          || '').toLowerCase().includes(q) ||
+          (p.categoryName         || '').toLowerCase().includes(q) ||
+          (p.defaultSupplierName  || '').toLowerCase().includes(q)
       );
     }
+
     return list;
   }, [items, filters, search]);
 
-  const openCreate = () => { setEditing(null); setModalOpen(true); };
-  const openEdit   = (p)  => { setEditing(p);  setModalOpen(true); };
-  const closeModal = ()   => {
+  // ── Modal handlers ──────────────────────────────────────────────────────────
+  const openCreate = () => {
+    setEditing(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (p) => {
+    setEditing(p);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
     dispatch(clearProductActionState());
@@ -90,6 +119,7 @@ export default function ProductsPage() {
     dispatch(fetchProducts({ token, params: { activeOnly: false } }));
   };
 
+  // ── Deactivate handlers ────────────────────────────────────────────────────
   const handleDeleteConfirm = () => {
     if (!confirmId) return;
     dispatch(deleteProduct({ token, id: confirmId })).then(() => {
@@ -101,8 +131,10 @@ export default function ProductsPage() {
   const confirmTarget = items.find((p) => p.id === confirmId);
   const deleting      = actStatus === 'loading' && confirmId !== null;
 
-  // Active categories for filter dropdown
+  // Active categories for filter dropdown (active-only makes sense for filters)
   const activeCategories = categories.filter((c) => c.active);
+
+  const activeCount = items.filter((p) => p.active).length;
 
   return (
     <div className="prods-page">
@@ -111,8 +143,9 @@ export default function ProductsPage() {
       <div className="prods-content">
         <SectionHeader
           title="Productos"
-          subtitle={`${items.filter((p) => p.active).length} activos · ${items.length} en total`}
+          subtitle={`${activeCount} activo${activeCount !== 1 ? 's' : ''} · ${items.length} en total`}
           action={
+            /* Only OWNER sees the create button */
             isOwner(user) && (
               <PrimaryBtn onClick={openCreate}>+ Nuevo producto</PrimaryBtn>
             )
@@ -165,7 +198,7 @@ export default function ProductsPage() {
           </label>
         </FilterBar>
 
-        {/* ── Error ── */}
+        {/* ── Fetch error ── */}
         {fetchErr && (
           <div className="prods-error">⚠ {fetchErr}</div>
         )}
@@ -173,7 +206,7 @@ export default function ProductsPage() {
         {/* ── Loading ── */}
         {status === 'loading' && <TableSkeleton rows={8} />}
 
-        {/* ── Empty ── */}
+        {/* ── Empty state ── */}
         {status === 'succeeded' && filtered.length === 0 && (
           <EmptyState
             icon="🥐"
@@ -181,7 +214,9 @@ export default function ProductsPage() {
             description={
               search
                 ? 'Probá con otra búsqueda o cambiá los filtros.'
-                : 'Creá el primer producto para empezar.'
+                : isOwner(user)
+                  ? 'Creá el primer producto para empezar.'
+                  : 'Todavía no hay productos cargados.'
             }
             action={
               isOwner(user) && !search && (
@@ -194,13 +229,14 @@ export default function ProductsPage() {
         {/* ── Table ── */}
         {status === 'succeeded' && filtered.length > 0 && (
           <>
-            {/* Column header */}
+            {/* Column headers */}
             <div className="prod-table-header">
               <span style={{ flex: 3 }}>Producto</span>
               <span style={{ flex: 2 }}>Categoría</span>
               <span style={{ flex: 1, textAlign: 'center' }}>Origen</span>
               <span style={{ flex: 1, textAlign: 'right' }}>Precio venta</span>
               <span style={{ flex: 1, textAlign: 'center' }}>Estado</span>
+              {/* OWNER gets an extra column for actions */}
               {isOwner(user) && (
                 <span style={{ flex: 1, textAlign: 'center' }}>Acciones</span>
               )}
@@ -209,10 +245,11 @@ export default function ProductsPage() {
             <div className="prod-list">
               {filtered.map((p, i) => (
                 <div key={p.id} style={{ animationDelay: `${i * 0.03}s` }}>
-                  {/* Row */}
+
+                  {/* ── Row ── */}
                   <div
                     className={`prod-row ${!p.active ? 'inactive' : ''} ${expandedId === p.id ? 'expanded' : ''}`}
-                    onClick={() => setExpanded(expandedId === p.id ? null : p.id)}
+                    onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                   >
                     {/* Name */}
                     <div style={{ flex: 3, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -239,7 +276,7 @@ export default function ProductsPage() {
                       <OriginBadge origin={p.origin} />
                     </div>
 
-                    {/* Price */}
+                    {/* Sale price */}
                     <div style={{ flex: 1, textAlign: 'right' }}>
                       <span className="prod-price">{formatARS(p.salePrice)}</span>
                       {p.costPrice != null && (
@@ -252,11 +289,14 @@ export default function ProductsPage() {
                       <StatusBadge active={p.active} />
                     </div>
 
-                    {/* Actions — OWNER only */}
+                    {/*
+                     * OWNER: edit + deactivate buttons
+                     * EMPLOYEE: no action column cells rendered
+                     */}
                     {isOwner(user) && (
                       <div
                         style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 6 }}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()} /* don't toggle expand */
                       >
                         <ActionBtn
                           variant="edit"
@@ -273,7 +313,7 @@ export default function ProductsPage() {
                     )}
                   </div>
 
-                  {/* Expanded detail row */}
+                  {/* ── Expanded detail panel ── */}
                   {expandedId === p.id && (
                     <div className="prod-detail">
                       <div className="prod-detail-grid">
@@ -321,49 +361,51 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {/* ── Create / Edit Modal ── */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={closeModal}
-        title={editing ? `Editar: ${editing.name}` : 'Nuevo producto'}
-        width="640px"
-      >
-        <ProductForm
-          product={editing}
-          onSuccess={handleFormSuccess}
-          onCancel={closeModal}
-        />
-      </Modal>
+      {/* ── Create / Edit Modal — OWNER only ── */}
+      {isOwner(user) && (
+        <Modal
+          isOpen={modalOpen}
+          onClose={closeModal}
+          title={editing ? `Editar: ${editing.name}` : 'Nuevo producto'}
+          width="640px"
+        >
+          <ProductForm
+            product={editing}
+            onSuccess={handleFormSuccess}
+            onCancel={closeModal}
+          />
+        </Modal>
+      )}
 
-      {/* ── Confirm deactivate ── */}
-      <ConfirmDialog
-        isOpen={Boolean(confirmId)}
-        onClose={() => setConfirmId(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Desactivar producto"
-        message={`¿Desactivar "${confirmTarget?.name}"? El producto no podrá usarse en nuevas operaciones de stock, pero el historial se conserva.`}
-        confirmLabel="Desactivar"
-        danger
-        loading={deleting}
-      />
+      {/* ── Deactivate confirm — OWNER only ── */}
+      {isOwner(user) && (
+        <ConfirmDialog
+          isOpen={Boolean(confirmId)}
+          onClose={() => setConfirmId(null)}
+          onConfirm={handleDeleteConfirm}
+          title="Desactivar producto"
+          message={`¿Desactivar "${confirmTarget?.name}"? El producto no podrá usarse en nuevas operaciones de stock, pero el historial se conserva.`}
+          confirmLabel="Desactivar"
+          danger
+          loading={deleting}
+        />
+      )}
 
       <style>{`
-        .prods-page { min-height: 100vh; background: var(--cream); }
+        .prods-page    { min-height: 100vh; background: var(--cream); }
         .prods-content {
           max-width: 1100px; margin: 0 auto;
           padding: var(--space-xl) var(--space-lg);
         }
 
         /* Search */
-        .prods-search-wrap {
-          position: relative; flex: 1; min-width: 200px;
-        }
+        .prods-search-wrap { position: relative; flex: 1; min-width: 200px; }
         .prods-search-icon {
           position: absolute; left: 12px; top: 50%;
           transform: translateY(-50%); font-size: 0.85rem; pointer-events: none;
         }
         .prods-search {
-          width: 100%; padding: 9px 36px 9px 36px;
+          width: 100%; padding: 9px 36px;
           font-family: var(--font-body); font-size: 0.88rem;
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
           background: white; color: var(--espresso); outline: none;
@@ -424,16 +466,15 @@ export default function ProductsPage() {
                       border-color var(--transition-fast),
                       border-radius var(--transition-fast);
         }
-        .prod-row:hover { box-shadow: var(--shadow-md); border-color: rgba(200,137,58,0.2); }
+        .prod-row:hover    { box-shadow: var(--shadow-md); border-color: rgba(200,137,58,0.2); }
+        .prod-row.inactive { opacity: 0.5; }
         .prod-row.expanded {
           border-color: var(--amber);
-          border-bottom-left-radius: 0;
-          border-bottom-right-radius: 0;
+          border-bottom-left-radius: 0; border-bottom-right-radius: 0;
           border-bottom: none;
         }
-        .prod-row.inactive { opacity: 0.5; }
 
-        .prod-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .prod-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         .prod-name { font-weight: 600; font-size: 0.92rem; color: var(--espresso); }
         .prod-desc {
           font-size: 0.75rem; color: var(--warm-gray);
@@ -447,8 +488,7 @@ export default function ProductsPage() {
         .prod-detail {
           padding: 14px 18px 16px;
           background: rgba(200,137,58,0.04);
-          border: 1px solid var(--amber);
-          border-top: none;
+          border: 1px solid var(--amber); border-top: none;
           border-bottom-left-radius: var(--radius-lg);
           border-bottom-right-radius: var(--radius-lg);
           animation: fadeIn 0.2s ease;
@@ -460,7 +500,7 @@ export default function ProductsPage() {
           text-transform: uppercase; letter-spacing: 0.07em;
           color: var(--warm-gray-light);
         }
-        .pd-mono { font-family: monospace; font-size: 0.82rem; color: var(--warm-gray); }
+        .pd-mono  { font-family: monospace; font-size: 0.82rem; color: var(--warm-gray); }
 
         .prods-count {
           text-align: right; font-size: 0.78rem;

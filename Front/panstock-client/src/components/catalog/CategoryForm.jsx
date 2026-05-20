@@ -12,20 +12,21 @@ import { Input, Button, Alert } from '../ui/FormField';
 const EMPTY = { name: '', description: '', active: true };
 
 export default function CategoryForm({ category = null, onSuccess, onCancel }) {
-  const dispatch      = useDispatch();
-  const token         = useSelector(selectToken);
-  const { status, error } = useSelector(selectCategoryAction);
-  const isEdit        = Boolean(category);
+  const dispatch                  = useDispatch();
+  const token                     = useSelector(selectToken);
+  const { status, error }         = useSelector(selectCategoryAction);
+  const isEdit                    = Boolean(category);
 
-  const [form, setForm]         = useState(EMPTY);
-  const [fieldErrors, setFE]    = useState({});
+  const [form, setForm]           = useState(EMPTY);
+  const [fieldErrors, setFE]      = useState({});
 
+  // ── Populate on edit ────────────────────────────────────────────────────────
   useEffect(() => {
     if (category) {
       setForm({
-        name: category.name || '',
+        name:        category.name        || '',
         description: category.description || '',
-        active: category.active !== undefined ? category.active : true,
+        active:      category.active !== undefined ? category.active : true,
       });
     } else {
       setForm(EMPTY);
@@ -34,7 +35,7 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
     dispatch(clearCategoryActionState());
   }, [category, dispatch]);
 
-  // Close on success
+  // ── Auto-close on success ───────────────────────────────────────────────────
   useEffect(() => {
     if (status === 'succeeded') {
       dispatch(clearCategoryActionState());
@@ -42,11 +43,14 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
     }
   }, [status, dispatch, onSuccess]);
 
+  // ── Validation ──────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'El nombre es obligatorio';
-    else if (form.name.trim().length > 100) e.name = 'Máximo 100 caracteres';
-    if (form.description && form.description.length > 255) e.description = 'Máximo 255 caracteres';
+    if (!form.name.trim())           e.name        = 'El nombre es obligatorio';
+    else if (form.name.trim().length > 100)
+                                     e.name        = 'Máximo 100 caracteres';
+    if (form.description && form.description.length > 255)
+                                     e.description = 'Máximo 255 caracteres';
     return e;
   };
 
@@ -60,11 +64,13 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
+
     const payload = {
-      name: form.name.trim(),
+      name:        form.name.trim(),
       description: form.description.trim() || null,
-      active: form.active,
+      active:      form.active,
     };
+
     if (isEdit) {
       dispatch(updateCategory({ token, id: category.id, data: payload }));
     } else {
@@ -89,8 +95,8 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
         autoFocus
       />
 
-      <div className="field-wrapper">
-        <label className="field-label">Descripción</label>
+      <div className="cf-field-wrapper">
+        <label className="cf-field-label">Descripción</label>
         <textarea
           className={`cf-textarea ${fieldErrors.description ? 'has-error' : ''}`}
           placeholder="Descripción opcional..."
@@ -99,7 +105,7 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
           disabled={isLoading}
           rows={3}
         />
-        {fieldErrors.description && <span className="field-error">{fieldErrors.description}</span>}
+        {fieldErrors.description && <span className="cf-field-error">{fieldErrors.description}</span>}
       </div>
 
       <label className="cf-checkbox-row">
@@ -114,7 +120,12 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
       </label>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 8 }}>
-        <button type="button" className="cf-cancel-btn" onClick={onCancel} disabled={isLoading}>
+        <button
+          type="button"
+          className="cf-cancel-btn"
+          onClick={onCancel}
+          disabled={isLoading}
+        >
           Cancelar
         </button>
         <Button type="submit" variant="amber" loading={isLoading}>
@@ -123,29 +134,34 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
       </div>
 
       <style>{`
-        .field-wrapper { display: flex; flex-direction: column; gap: 6px; }
-        .field-label {
+        .cf-field-wrapper { display: flex; flex-direction: column; gap: 6px; }
+        .cf-field-label {
           font-family: var(--font-body); font-size: 0.78rem; font-weight: 600;
           letter-spacing: 0.08em; text-transform: uppercase; color: var(--warm-gray);
         }
-        .field-error { font-size: 0.78rem; color: var(--error); font-weight: 500; }
+        .cf-field-error { font-size: 0.78rem; color: var(--error); font-weight: 500; }
         .cf-textarea {
           width: 100%; padding: 12px 14px;
           font-family: var(--font-body); font-size: 0.92rem;
           color: var(--espresso); background: rgba(255,255,255,0.7);
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
-          outline: none; resize: vertical; transition: border-color var(--transition-base);
+          outline: none; resize: vertical;
+          transition: border-color var(--transition-base);
+          box-sizing: border-box;
         }
-        .cf-textarea:focus { border-color: var(--amber); background: #fff; box-shadow: 0 0 0 3px rgba(200,137,58,0.12); }
+        .cf-textarea:focus {
+          border-color: var(--amber); background: #fff;
+          box-shadow: 0 0 0 3px rgba(200,137,58,0.12);
+        }
         .cf-textarea.has-error { border-color: var(--error); }
+
         .cf-checkbox-row {
-          display: flex; align-items: center; gap: 10px; cursor: pointer;
-          font-size: 0.9rem; color: var(--espresso);
+          display: flex; align-items: center; gap: 10px;
+          cursor: pointer; font-size: 0.9rem; color: var(--espresso);
         }
-        .cf-checkbox {
-          width: 18px; height: 18px; accent-color: var(--amber); cursor: pointer;
-        }
+        .cf-checkbox { width: 18px; height: 18px; accent-color: var(--amber); cursor: pointer; }
         .cf-checkbox-label { font-weight: 500; }
+
         .cf-cancel-btn {
           padding: 10px 20px; background: var(--cream);
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
@@ -153,7 +169,7 @@ export default function CategoryForm({ category = null, onSuccess, onCancel }) {
           color: var(--warm-gray); cursor: pointer;
           transition: all var(--transition-fast);
         }
-        .cf-cancel-btn:hover { border-color: var(--warm-gray); color: var(--espresso); }
+        .cf-cancel-btn:hover    { border-color: var(--warm-gray); color: var(--espresso); }
         .cf-cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </form>

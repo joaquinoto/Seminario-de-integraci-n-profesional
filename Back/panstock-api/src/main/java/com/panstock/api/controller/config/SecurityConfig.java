@@ -33,53 +33,66 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-    http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(req -> req
 
-                    // Auth: público
+                    // ── Auth: public ─────────────────────────────────────────────────
                     .requestMatchers("/auth/**").permitAll()
 
-                    // Users: autenticado para ver datos propios,
-                    // solo OWNER para listar y deshabilitar
+                    // ── Users ────────────────────────────────────────────────────────
+                    // Any authenticated user can view their own data and update it
                     .requestMatchers(HttpMethod.GET, "/users/data").authenticated()
                     .requestMatchers(HttpMethod.PUT, "/users/update").authenticated()
+                    // Listing all users and disabling employees: OWNER only
                     .requestMatchers("/users/**").hasAuthority(Role.OWNER.name())
 
-                    // Productos: GET público, escritura solo OWNER
-                    .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                    .requestMatchers("/api/products/**").hasAuthority(Role.OWNER.name())
+                    // ── Products ─────────────────────────────────────────────────────
+                    // BOTH roles can read products (GET)
+                    // Only OWNER can create / update / delete
+                    .requestMatchers(HttpMethod.GET,    "/api/products/**").authenticated()
+                    .requestMatchers(HttpMethod.POST,   "/api/products/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasAuthority(Role.OWNER.name())
 
-                    // Categorías: GET público, escritura solo OWNER
-                    .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
-                    .requestMatchers("/api/categories/**").hasAuthority(Role.OWNER.name())
+                    // ── Categories ───────────────────────────────────────────────────
+                    // BOTH roles can read categories (GET)
+                    // Only OWNER can create / update / delete
+                    .requestMatchers(HttpMethod.GET,    "/api/categories/**").authenticated()
+                    .requestMatchers(HttpMethod.POST,   "/api/categories/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.PUT,    "/api/categories/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.DELETE, "/api/categories/**").hasAuthority(Role.OWNER.name())
 
-                    // Proveedores: GET autenticado, escritura solo OWNER
-                    .requestMatchers(HttpMethod.GET, "/api/suppliers/**").authenticated()
-                    .requestMatchers("/api/suppliers/**").hasAuthority(Role.OWNER.name())
+                    // ── Suppliers ────────────────────────────────────────────────────
+                    // BOTH roles can read suppliers (needed for product forms + stock entry)
+                    .requestMatchers(HttpMethod.GET,    "/api/suppliers/**").authenticated()
+                    .requestMatchers(HttpMethod.POST,   "/api/suppliers/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.PUT,    "/api/suppliers/**").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.DELETE, "/api/suppliers/**").hasAuthority(Role.OWNER.name())
 
-                    // Stock: operaciones disponibles para OWNER y EMPLOYEE
+                    // ── Stock: OWNER + EMPLOYEE ──────────────────────────────────────
                     .requestMatchers("/api/stock/**").authenticated()
 
-                    // Mermas: OWNER y EMPLOYEE
+                    // ── Waste records: OWNER + EMPLOYEE ─────────────────────────────
                     .requestMatchers("/api/waste-records/**").authenticated()
 
-                    // Alertas: OWNER y EMPLOYEE
+                    // ── Alerts: OWNER + EMPLOYEE ─────────────────────────────────────
                     .requestMatchers("/api/alerts/**").authenticated()
 
-                    // Promociones: solo OWNER
-                    .requestMatchers("/api/promotions/**").hasAuthority(Role.OWNER.name())
-
-                    // Reportes: solo OWNER
-                    .requestMatchers("/api/reports/**").hasAuthority(Role.OWNER.name())
-
-                    // Settings: solo OWNER
-                    .requestMatchers("/api/settings/**").hasAuthority(Role.OWNER.name())
-
-                    // Dashboard: OWNER y EMPLOYEE
+                    // ── Dashboard: OWNER + EMPLOYEE ──────────────────────────────────
                     .requestMatchers("/api/dashboard/**").authenticated()
 
-                    // Cualquier otra cosa: autenticado
+                    // ── Promotions: OWNER only ────────────────────────────────────────
+                    .requestMatchers("/api/promotions/**").hasAuthority(Role.OWNER.name())
+
+                    // ── Reports: OWNER only ───────────────────────────────────────────
+                    .requestMatchers("/api/reports/**").hasAuthority(Role.OWNER.name())
+
+                    // ── Settings: OWNER only ──────────────────────────────────────────
+                    .requestMatchers("/api/settings/**").hasAuthority(Role.OWNER.name())
+
+                    // ── Anything else: authenticated ──────────────────────────────────
                     .anyRequest().authenticated()
             )
             .sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
@@ -92,6 +105,7 @@ public class SecurityConfig {
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfig = new CorsConfiguration();
+        // Allow all origins in development; tighten to your frontend domain in production
         corsConfig.setAllowedOrigins(List.of("*"));
         corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         corsConfig.setAllowCredentials(false);

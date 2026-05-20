@@ -8,10 +8,11 @@ import {
 } from '../../features/catalog/productsSlice';
 import { selectToken } from '../../features/auth/authSlice';
 import { selectActiveCategories } from '../../features/catalog/categoriesSlice';
-import { selectActiveSuppliers } from '../../features/catalog/suppliersSlice';
+import { selectActiveSuppliers }  from '../../features/catalog/suppliersSlice';
 import { Alert } from '../ui/FormField';
 
-// Enums matching backend exactly (from UnitType.java)
+// ─── Enum constants — must match backend Java enums exactly ──────────────────
+
 const ORIGINS    = ['FRANCHISE', 'EXTERNAL'];
 const UNIT_TYPES = ['UNIT', 'KG', 'GRAM', 'TRAY', 'BAG', 'LITER', 'PACK'];
 
@@ -19,6 +20,7 @@ const ORIGIN_LABELS = {
   FRANCHISE: '🏷 Franquicia',
   EXTERNAL:  '🌐 Externo',
 };
+
 const UNIT_LABELS = {
   UNIT:  'Unidad',
   KG:    'Kilogramo',
@@ -38,6 +40,8 @@ const EMPTY = {
   active: true,
 };
 
+// ─── Field wrapper ────────────────────────────────────────────────────────────
+
 function Field({ label, error, children }) {
   return (
     <div className="pf-field">
@@ -47,6 +51,8 @@ function Field({ label, error, children }) {
     </div>
   );
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ProductForm({ product = null, onSuccess, onCancel }) {
   const dispatch          = useDispatch();
@@ -59,20 +65,20 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
   const [form, setForm]      = useState(EMPTY);
   const [fieldErrors, setFE] = useState({});
 
-  // Populate form when editing
+  // ── Populate on edit ────────────────────────────────────────────────────────
   useEffect(() => {
     if (product) {
       setForm({
-        name:              product.name || '',
-        description:       product.description || '',
-        categoryId:        product.categoryId ?? '',
+        name:              product.name              || '',
+        description:       product.description       || '',
+        categoryId:        product.categoryId        ?? '',
         defaultSupplierId: product.defaultSupplierId ?? '',
-        origin:            product.origin || 'FRANCHISE',
+        origin:            product.origin            || 'FRANCHISE',
         perishable:        product.perishable !== undefined ? product.perishable : true,
-        unitType:          product.unitType || 'UNIT',
-        costPrice:         product.costPrice ?? '',
-        salePrice:         product.salePrice ?? '',
-        minimumStock:      product.minimumStock ?? '',
+        unitType:          product.unitType          || 'UNIT',
+        costPrice:         product.costPrice         ?? '',
+        salePrice:         product.salePrice         ?? '',
+        minimumStock:      product.minimumStock      ?? '',
         active:            product.active !== undefined ? product.active : true,
       });
     } else {
@@ -82,7 +88,7 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
     dispatch(clearProductActionState());
   }, [product, dispatch]);
 
-  // Close on success
+  // ── Auto-close on success ───────────────────────────────────────────────────
   useEffect(() => {
     if (status === 'succeeded') {
       dispatch(clearProductActionState());
@@ -90,15 +96,21 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
     }
   }, [status, dispatch, onSuccess]);
 
+  // ── Validation ──────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
     if (!form.name.trim())  e.name       = 'El nombre es obligatorio';
     if (!form.categoryId)   e.categoryId = 'La categoría es obligatoria';
     if (!form.origin)       e.origin     = 'El origen es obligatorio';
     if (!form.unitType)     e.unitType   = 'La unidad es obligatoria';
-    if (form.costPrice    !== '' && (isNaN(Number(form.costPrice))    || Number(form.costPrice)    < 0)) e.costPrice    = 'Debe ser un número positivo';
-    if (form.salePrice    !== '' && (isNaN(Number(form.salePrice))    || Number(form.salePrice)    < 0)) e.salePrice    = 'Debe ser un número positivo';
-    if (form.minimumStock !== '' && (isNaN(Number(form.minimumStock)) || Number(form.minimumStock) < 0)) e.minimumStock = 'Debe ser un número positivo';
+    const checkNum = (field) => {
+      const v = form[field];
+      if (v !== '' && (isNaN(Number(v)) || Number(v) < 0))
+        e[field] = 'Debe ser un número positivo';
+    };
+    checkNum('costPrice');
+    checkNum('salePrice');
+    checkNum('minimumStock');
     return e;
   };
 
@@ -108,7 +120,8 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
     if (fieldErrors[field]) setFE((p) => ({ ...p, [field]: undefined }));
   };
 
-  const toNum = (v) => (v === '' || v === null || v === undefined) ? null : Number(v);
+  const toNum = (v) =>
+    v === '' || v === null || v === undefined ? null : Number(v);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -147,15 +160,20 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         <Field label="Nombre *" error={fieldErrors.name}>
           <input
             className={`pf-input ${fieldErrors.name ? 'err' : ''}`}
-            type="text" placeholder="Ej: Medialunas de manteca"
-            value={form.name} onChange={handleChange('name')}
-            disabled={isLoading} autoFocus
+            type="text"
+            placeholder="Ej: Medialunas de manteca"
+            value={form.name}
+            onChange={handleChange('name')}
+            disabled={isLoading}
+            autoFocus
           />
         </Field>
+
         <Field label="Categoría *" error={fieldErrors.categoryId}>
           <select
             className={`pf-select ${fieldErrors.categoryId ? 'err' : ''}`}
-            value={form.categoryId} onChange={handleChange('categoryId')}
+            value={form.categoryId}
+            onChange={handleChange('categoryId')}
             disabled={isLoading}
           >
             <option value="">— Seleccionar —</option>
@@ -171,8 +189,10 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         <textarea
           className="pf-textarea"
           placeholder="Descripción opcional..."
-          value={form.description} onChange={handleChange('description')}
-          disabled={isLoading} rows={2}
+          value={form.description}
+          onChange={handleChange('description')}
+          disabled={isLoading}
+          rows={2}
         />
       </Field>
 
@@ -181,7 +201,8 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         <Field label="Origen *" error={fieldErrors.origin}>
           <select
             className={`pf-select ${fieldErrors.origin ? 'err' : ''}`}
-            value={form.origin} onChange={handleChange('origin')}
+            value={form.origin}
+            onChange={handleChange('origin')}
             disabled={isLoading}
           >
             {ORIGINS.map((o) => (
@@ -189,10 +210,12 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
             ))}
           </select>
         </Field>
+
         <Field label="Unidad *" error={fieldErrors.unitType}>
           <select
             className={`pf-select ${fieldErrors.unitType ? 'err' : ''}`}
-            value={form.unitType} onChange={handleChange('unitType')}
+            value={form.unitType}
+            onChange={handleChange('unitType')}
             disabled={isLoading}
           >
             {UNIT_TYPES.map((u) => (
@@ -200,10 +223,12 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
             ))}
           </select>
         </Field>
+
         <Field label="Proveedor por defecto">
           <select
             className="pf-select"
-            value={form.defaultSupplierId} onChange={handleChange('defaultSupplierId')}
+            value={form.defaultSupplierId}
+            onChange={handleChange('defaultSupplierId')}
             disabled={isLoading}
           >
             <option value="">— Ninguno —</option>
@@ -214,29 +239,34 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         </Field>
       </div>
 
-      {/* Row 3: Prices + stock */}
+      {/* Row 3: Prices + Stock */}
       <div className="pf-grid-3">
         <Field label="Costo unitario ($)" error={fieldErrors.costPrice}>
           <input
             className={`pf-input ${fieldErrors.costPrice ? 'err' : ''}`}
             type="number" min="0" step="0.01" placeholder="0.00"
-            value={form.costPrice} onChange={handleChange('costPrice')}
+            value={form.costPrice}
+            onChange={handleChange('costPrice')}
             disabled={isLoading}
           />
         </Field>
+
         <Field label="Precio de venta ($)" error={fieldErrors.salePrice}>
           <input
             className={`pf-input ${fieldErrors.salePrice ? 'err' : ''}`}
             type="number" min="0" step="0.01" placeholder="0.00"
-            value={form.salePrice} onChange={handleChange('salePrice')}
+            value={form.salePrice}
+            onChange={handleChange('salePrice')}
             disabled={isLoading}
           />
         </Field>
+
         <Field label="Stock mínimo" error={fieldErrors.minimumStock}>
           <input
             className={`pf-input ${fieldErrors.minimumStock ? 'err' : ''}`}
             type="number" min="0" step="0.001" placeholder="0"
-            value={form.minimumStock} onChange={handleChange('minimumStock')}
+            value={form.minimumStock}
+            onChange={handleChange('minimumStock')}
             disabled={isLoading}
           />
         </Field>
@@ -247,7 +277,8 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         <label className="pf-toggle-row">
           <input
             type="checkbox" className="pf-checkbox"
-            checked={form.perishable} onChange={handleChange('perishable')}
+            checked={form.perishable}
+            onChange={handleChange('perishable')}
             disabled={isLoading}
           />
           <div>
@@ -255,10 +286,12 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
             <span className="pf-toggle-hint">Requiere fecha de vencimiento al ingresar stock</span>
           </div>
         </label>
+
         <label className="pf-toggle-row">
           <input
             type="checkbox" className="pf-checkbox"
-            checked={form.active} onChange={handleChange('active')}
+            checked={form.active}
+            onChange={handleChange('active')}
             disabled={isLoading}
           />
           <div>
@@ -270,7 +303,12 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
 
       {/* Actions */}
       <div className="pf-actions">
-        <button type="button" className="pf-cancel" onClick={onCancel} disabled={isLoading}>
+        <button
+          type="button"
+          className="pf-cancel"
+          onClick={onCancel}
+          disabled={isLoading}
+        >
           Cancelar
         </button>
         <button type="submit" className="pf-submit" disabled={isLoading}>
@@ -281,9 +319,9 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
       </div>
 
       <style>{`
-        .pf-form  { display: flex; flex-direction: column; gap: 16px; }
-        .pf-grid-2{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .pf-grid-3{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        .pf-form   { display: flex; flex-direction: column; gap: 16px; }
+        .pf-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .pf-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
         .pf-field { display: flex; flex-direction: column; gap: 5px; }
         .pf-label {
@@ -298,9 +336,9 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
           color: var(--espresso); background: rgba(255,255,255,0.7);
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
           outline: none; transition: border-color var(--transition-base);
-          -webkit-appearance: none;
+          -webkit-appearance: none; box-sizing: border-box;
         }
-        .pf-select { padding-right: 32px; cursor: pointer; }
+        .pf-select  { padding-right: 32px; cursor: pointer; }
         .pf-textarea { resize: vertical; }
         .pf-input:focus, .pf-select:focus, .pf-textarea:focus {
           border-color: var(--amber); background: #fff;
@@ -319,9 +357,17 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
         .pf-toggle-row:has(.pf-checkbox:checked) {
           border-color: var(--amber); background: rgba(200,137,58,0.05);
         }
-        .pf-checkbox { width: 18px; height: 18px; accent-color: var(--amber); margin-top: 2px; cursor: pointer; flex-shrink: 0; }
-        .pf-toggle-title { display: block; font-weight: 600; font-size: 0.88rem; color: var(--espresso); }
-        .pf-toggle-hint  { display: block; font-size: 0.75rem; color: var(--warm-gray); line-height: 1.4; margin-top: 2px; }
+        .pf-checkbox {
+          width: 18px; height: 18px; accent-color: var(--amber);
+          margin-top: 2px; cursor: pointer; flex-shrink: 0;
+        }
+        .pf-toggle-title {
+          display: block; font-weight: 600; font-size: 0.88rem; color: var(--espresso);
+        }
+        .pf-toggle-hint {
+          display: block; font-size: 0.75rem; color: var(--warm-gray);
+          line-height: 1.4; margin-top: 2px;
+        }
 
         .pf-actions {
           display: flex; gap: 10px; justify-content: flex-end;
@@ -333,7 +379,7 @@ export default function ProductForm({ product = null, onSuccess, onCancel }) {
           font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
           color: var(--warm-gray); cursor: pointer; transition: all var(--transition-fast);
         }
-        .pf-cancel:hover { border-color: var(--warm-gray); color: var(--espresso); }
+        .pf-cancel:hover    { border-color: var(--warm-gray); color: var(--espresso); }
         .pf-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
         .pf-submit {
           padding: 11px 24px; background: var(--amber); color: white;
