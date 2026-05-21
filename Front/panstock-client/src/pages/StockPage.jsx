@@ -11,22 +11,23 @@ import {
 import { selectToken } from '../features/auth/authSlice';
 import { Modal, TableSkeleton } from '../components/ui/CatalogUI';
 import StockEntryForm from '../components/stock/StockEntryForm';
+import StockSaleForm  from '../components/stock/StockSaleForm';
 import AppTopbar from '../components/layout/AppTopbar';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const EXPIRATION_CONFIG = {
-  EXPIRED:        { label: 'Vencido',      color: '#C0392B', bg: 'rgba(192,57,43,0.10)', icon: '💀' },
-  RED:            { label: 'Vence hoy',    color: '#E74C3C', bg: 'rgba(231,76,60,0.10)', icon: '🔴' },
-  YELLOW:         { label: 'Vence pronto', color: '#D68910', bg: 'rgba(214,137,16,0.10)',icon: '🟡' },
-  GREEN:          { label: 'En buen estado',color:'#1E8449', bg: 'rgba(30,132,73,0.10)', icon: '🟢' },
-  NOT_APPLICABLE: { label: 'Sin vencimiento',color:'#8C7B6B',bg:'rgba(140,123,107,0.10)',icon:'⚪' },
+  EXPIRED:        { label: 'Vencido',        color: '#C0392B', bg: 'rgba(192,57,43,0.10)',  icon: '💀' },
+  RED:            { label: 'Vence hoy',      color: '#E74C3C', bg: 'rgba(231,76,60,0.10)',  icon: '🔴' },
+  YELLOW:         { label: 'Vence pronto',   color: '#D68910', bg: 'rgba(214,137,16,0.10)', icon: '🟡' },
+  GREEN:          { label: 'En buen estado', color: '#1E8449', bg: 'rgba(30,132,73,0.10)',  icon: '🟢' },
+  NOT_APPLICABLE: { label: 'Sin vencimiento',color: '#8C7B6B', bg: 'rgba(140,123,107,0.10)',icon: '⚪' },
 };
 
 const BATCH_STATUS_LABELS = {
-  AVAILABLE: { label: 'Disponible', color: '#2E7D32', bg: 'rgba(46,125,50,0.10)' },
-  DEPLETED:  { label: 'Agotado',   color: '#C0392B', bg: 'rgba(192,57,43,0.10)' },
-  DISCARDED: { label: 'Descartado',color: '#8C7B6B', bg: 'rgba(140,123,107,0.10)' },
+  AVAILABLE: { label: 'Disponible', color: '#2E7D32', bg: 'rgba(46,125,50,0.10)'      },
+  DEPLETED:  { label: 'Agotado',   color: '#C0392B', bg: 'rgba(192,57,43,0.10)'      },
+  DISCARDED: { label: 'Descartado',color: '#8C7B6B', bg: 'rgba(140,123,107,0.10)'    },
 };
 
 const STORAGE_LABELS = {
@@ -37,11 +38,11 @@ const STORAGE_LABELS = {
   STORAGE:  '📦 Depósito',
 };
 
-const formatQty   = (v) => v != null ? Number(v).toLocaleString('es-AR') : '—';
-const formatARS   = (v) => v != null && v !== 0
+const formatQty  = (v) => v != null ? Number(v).toLocaleString('es-AR') : '—';
+const formatARS  = (v) => v != null && v !== 0
   ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v)
   : '—';
-const formatDate  = (d) => d
+const formatDate = (d) => d
   ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
   : '—';
 
@@ -188,7 +189,6 @@ function BatchRow({ batch }) {
 
       <style>{`
         .br-wrap { display: flex; flex-direction: column; }
-
         .br-row {
           background: white; border: 1px solid var(--cream-dark);
           border-radius: var(--radius-md); padding: 14px 16px;
@@ -202,25 +202,16 @@ function BatchRow({ batch }) {
           border-color: var(--amber); border-bottom-left-radius: 0;
           border-bottom-right-radius: 0; border-bottom: none;
         }
-
-        .br-main {
-          display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-        }
+        .br-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
         .br-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
         .br-name { font-weight: 700; font-size: 0.95rem; color: var(--espresso); }
         .br-supplier { font-size: 0.76rem; color: var(--warm-gray); }
         .br-badges { display: flex; flex-wrap: wrap; gap: 5px; flex-shrink: 0; }
-
-        .br-meta {
-          display: flex; align-items: center; gap: 12px;
-          flex-wrap: wrap;
-        }
+        .br-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         .br-meta-item { display: flex; flex-direction: column; gap: 1px; }
         .br-meta-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--warm-gray-light); font-weight: 600; }
         .br-meta-value { font-size: 0.82rem; font-weight: 600; color: var(--espresso); }
         .br-expand-icon { font-size: 0.7rem; color: var(--warm-gray-light); margin-left: auto; align-self: center; }
-
-        /* Expanded detail */
         .br-detail {
           border: 1px solid var(--amber); border-top: none;
           border-bottom-left-radius: var(--radius-md); border-bottom-right-radius: var(--radius-md);
@@ -249,12 +240,13 @@ export default function StockPage() {
   const batches       = useSelector(selectBatches);
   const batchesStatus = useSelector(selectBatchesStatus);
 
-  const [modalOpen,   setModalOpen]   = useState(false);
-  const [view,        setView]        = useState('summary'); // 'summary' | 'batches'
-  const [search,      setSearch]      = useState('');
-  const [statusFilter,setStatusFilter]= useState('AVAILABLE');
+  // 'entry' | 'sale' | null
+  const [activeModal, setActiveModal]  = useState(null);
+  const [view,        setView]         = useState('summary');
+  const [search,      setSearch]       = useState('');
+  const [statusFilter,setStatusFilter] = useState('AVAILABLE');
 
-  // ── Fetch data ────────────────────────────────────────────────────────────
+  // ── Fetch data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (token) {
       dispatch(fetchStockSummary({ token }));
@@ -267,7 +259,7 @@ export default function StockPage() {
     dispatch(fetchBatches({ token }));
   };
 
-  // ── Filtered batches ──────────────────────────────────────────────────────
+  // ── Filtered batches ───────────────────────────────────────────────────────
   const filteredBatches = useMemo(() => {
     let list = [...batches];
     if (statusFilter) list = list.filter((b) => b.batchStatus === statusFilter);
@@ -282,14 +274,14 @@ export default function StockPage() {
     return list;
   }, [batches, statusFilter, search]);
 
-  // ── Filtered summary ──────────────────────────────────────────────────────
+  // ── Filtered summary ───────────────────────────────────────────────────────
   const filteredSummary = useMemo(() => {
     if (!search.trim()) return summary;
     const q = search.trim().toLowerCase();
     return summary.filter((s) => (s.productName || '').toLowerCase().includes(q));
   }, [summary, search]);
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
+  // ── Stats ──────────────────────────────────────────────────────────────────
   const availableBatches = batches.filter((b) => b.batchStatus === 'AVAILABLE').length;
   const urgentBatches    = batches.filter((b) =>
     b.batchStatus === 'AVAILABLE' &&
@@ -298,8 +290,8 @@ export default function StockPage() {
 
   const isLoading = summaryStatus === 'loading' || batchesStatus === 'loading';
 
-  const handleEntrySuccess = () => {
-    setModalOpen(false);
+  const handleModalSuccess = () => {
+    setActiveModal(null);
     refresh();
   };
 
@@ -317,25 +309,44 @@ export default function StockPage() {
               {summary.length} producto{summary.length !== 1 ? 's' : ''} ·{' '}
               {availableBatches} lote{availableBatches !== 1 ? 's' : ''} disponible{availableBatches !== 1 ? 's' : ''}
               {urgentBatches > 0 && (
-                <span className="stock-urgent-badge">
-                  {urgentBatches} con alerta
-                </span>
+                <span className="stock-urgent-badge">{urgentBatches} con alerta</span>
               )}
             </p>
           </div>
-          <div className="stock-header-actions">
-            <button
-              className="stock-refresh-btn"
-              onClick={refresh}
-              disabled={isLoading}
-              title="Actualizar"
-            >
-              <span className={isLoading ? 'spin' : ''}>↻</span>
-            </button>
-            <button className="stock-entry-btn" onClick={() => setModalOpen(true)}>
-              + Registrar ingreso
-            </button>
-          </div>
+
+          <button
+            className="stock-refresh-btn"
+            onClick={refresh}
+            disabled={isLoading}
+            title="Actualizar"
+          >
+            <span className={isLoading ? 'spin' : ''}>↻</span>
+          </button>
+        </div>
+
+        {/* ── Action buttons — both roles can use both ── */}
+        <div className="stock-actions-row">
+          <button
+            className="stock-action-btn entry"
+            onClick={() => setActiveModal('entry')}
+          >
+            <span className="sab-icon">📥</span>
+            <div className="sab-text">
+              <span className="sab-title">Registrar ingreso</span>
+              <span className="sab-sub">Agregar stock / nuevo lote</span>
+            </div>
+          </button>
+
+          <button
+            className="stock-action-btn sale"
+            onClick={() => setActiveModal('sale')}
+          >
+            <span className="sab-icon">🛒</span>
+            <div className="sab-text">
+              <span className="sab-title">Registrar venta</span>
+              <span className="sab-sub">Descontar del inventario</span>
+            </div>
+          </button>
         </div>
 
         {/* ── Stats strip ── */}
@@ -350,8 +361,11 @@ export default function StockPage() {
             <span className="stat-label">Lotes activos</span>
           </div>
           <div className="stat-sep" />
-          <div className="stat-item" style={{ color: urgentBatches > 0 ? '#C0392B' : 'inherit' }}>
-            <span className="stat-value" style={{ color: urgentBatches > 0 ? '#C0392B' : 'var(--espresso)' }}>
+          <div className="stat-item">
+            <span
+              className="stat-value"
+              style={{ color: urgentBatches > 0 ? '#C0392B' : 'var(--espresso)' }}
+            >
               {urgentBatches}
             </span>
             <span className="stat-label">Con alerta</span>
@@ -417,7 +431,10 @@ export default function StockPage() {
                     : 'No hay stock registrado aún'}
                 </p>
                 {!search && (
-                  <button className="stock-entry-btn" onClick={() => setModalOpen(true)}>
+                  <button
+                    className="stock-action-btn-inline"
+                    onClick={() => setActiveModal('entry')}
+                  >
                     + Registrar primer ingreso
                   </button>
                 )}
@@ -458,19 +475,31 @@ export default function StockPage() {
             </p>
           </>
         )}
-
       </div>
 
       {/* ── Modal: Stock Entry ── */}
       <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        isOpen={activeModal === 'entry'}
+        onClose={() => setActiveModal(null)}
         title="Registrar ingreso de mercadería"
         width="560px"
       >
         <StockEntryForm
-          onSuccess={handleEntrySuccess}
-          onCancel={() => setModalOpen(false)}
+          onSuccess={handleModalSuccess}
+          onCancel={() => setActiveModal(null)}
+        />
+      </Modal>
+
+      {/* ── Modal: Sale ── */}
+      <Modal
+        isOpen={activeModal === 'sale'}
+        onClose={() => setActiveModal(null)}
+        title="Registrar venta manual"
+        width="480px"
+      >
+        <StockSaleForm
+          onSuccess={handleModalSuccess}
+          onCancel={() => setActiveModal(null)}
         />
       </Modal>
 
@@ -484,39 +513,66 @@ export default function StockPage() {
         /* Header */
         .stock-header {
           display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 12px; margin-bottom: var(--space-lg); flex-wrap: wrap;
+          gap: 12px; margin-bottom: var(--space-md); flex-wrap: wrap;
         }
         .stock-title { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--espresso); margin-bottom: 4px; }
-        .stock-sub   { font-size: 0.84rem; color: var(--warm-gray); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .stock-sub {
+          font-size: 0.84rem; color: var(--warm-gray);
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
         .stock-urgent-badge {
           display: inline-flex; align-items: center; padding: 2px 9px;
           border-radius: 20px; background: rgba(192,57,43,0.10); color: #C0392B;
           font-size: 0.72rem; font-weight: 700;
         }
-        .stock-header-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
         .stock-refresh-btn {
-          width: 38px; height: 38px;
-          background: white; border: 1.5px solid var(--cream-dark);
-          border-radius: var(--radius-md); font-size: 1.1rem;
-          cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: all var(--transition-fast); color: var(--warm-gray);
+          width: 38px; height: 38px; background: white;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          font-size: 1.1rem; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          color: var(--warm-gray); transition: all var(--transition-fast);
+          flex-shrink: 0;
         }
         .stock-refresh-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
         .stock-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 
-        .stock-entry-btn {
-          padding: 10px 18px; background: var(--espresso); color: var(--cream);
-          border: none; border-radius: var(--radius-md);
-          font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
-          cursor: pointer; transition: all var(--transition-fast); box-shadow: var(--shadow-md);
-          white-space: nowrap;
+        /* ── Action buttons row ── */
+        .stock-actions-row {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: 10px; margin-bottom: var(--space-lg);
         }
-        .stock-entry-btn:hover { background: var(--espresso-mid); transform: translateY(-1px); }
+        .stock-action-btn {
+          display: flex; align-items: center; gap: 12px;
+          padding: 14px 16px; border: 2px solid transparent;
+          border-radius: var(--radius-lg); cursor: pointer;
+          font-family: var(--font-body); text-align: left;
+          transition: all var(--transition-fast);
+        }
+        .stock-action-btn.entry {
+          background: var(--espresso); color: var(--cream);
+          box-shadow: var(--shadow-md);
+        }
+        .stock-action-btn.entry:hover {
+          background: var(--espresso-mid); transform: translateY(-2px);
+          box-shadow: var(--shadow-lg);
+        }
+        .stock-action-btn.sale {
+          background: #2E7D32; color: white;
+          box-shadow: 0 4px 16px rgba(46,125,50,0.22);
+        }
+        .stock-action-btn.sale:hover {
+          filter: brightness(1.08); transform: translateY(-2px);
+          box-shadow: 0 6px 24px rgba(46,125,50,0.3);
+        }
+        .sab-icon  { font-size: 1.5rem; flex-shrink: 0; }
+        .sab-text  { display: flex; flex-direction: column; gap: 1px; }
+        .sab-title { font-weight: 700; font-size: 0.92rem; }
+        .sab-sub   { font-size: 0.73rem; opacity: 0.75; }
 
         /* Stats */
         .stock-stats {
-          display: flex; align-items: center; gap: 0;
+          display: flex; align-items: center;
           background: white; border: 1px solid var(--cream-dark); border-radius: var(--radius-lg);
           padding: 14px 20px; margin-bottom: var(--space-lg);
           box-shadow: var(--shadow-sm);
@@ -582,15 +638,23 @@ export default function StockPage() {
         .stock-empty > span { font-size: 2.5rem; opacity: 0.4; }
         .stock-empty > p { font-family: var(--font-display); font-size: 1rem; color: var(--espresso); font-weight: 700; }
 
+        .stock-action-btn-inline {
+          padding: 11px 22px; background: var(--espresso); color: var(--cream);
+          border: none; border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+          cursor: pointer; transition: all var(--transition-fast); box-shadow: var(--shadow-md);
+        }
+        .stock-action-btn-inline:hover { background: var(--espresso-mid); transform: translateY(-1px); }
+
         .stock-count { text-align: right; font-size: 0.76rem; color: var(--warm-gray-light); margin-top: 10px; }
 
-        @media (max-width: 600px) {
+        @media (max-width: 500px) {
+          .stock-actions-row { grid-template-columns: 1fr; }
           .stock-summary-grid { grid-template-columns: 1fr 1fr; }
           .stock-controls { flex-direction: column; align-items: stretch; }
           .stock-tabs { align-self: flex-start; }
-          .stock-header-actions { flex-wrap: wrap; }
         }
-        @media (max-width: 380px) {
+        @media (max-width: 340px) {
           .stock-summary-grid { grid-template-columns: 1fr; }
         }
       `}</style>

@@ -52,14 +52,33 @@ export const fetchBatches = createAsyncThunk(
 /**
  * POST /api/stock/entries
  * Accessible by OWNER and EMPLOYEE
- * Body: { productId, supplierId?, receivedDate, expirationDate?, quantity,
- *         unitCost?, unitSalePrice?, storageType?, notes? }
  */
 export const registerStockEntry = createAsyncThunk(
   'stock/registerEntry',
   async ({ token, data }, { rejectWithValue }) => {
     try {
       return await fetch(`${BASE_URL}/api/stock/entries`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(data),
+      }).then(handleResponse);
+    } catch (e) {
+      return rejectWithValue(e.message);
+    }
+  }
+);
+
+/**
+ * POST /api/stock/sales
+ * Accessible by OWNER and EMPLOYEE
+ * Body: { productId, userId?, quantity, notes? }
+ * Backend uses FEFO to discount from batches automatically
+ */
+export const registerSale = createAsyncThunk(
+  'stock/registerSale',
+  async ({ token, data }, { rejectWithValue }) => {
+    try {
+      return await fetch(`${BASE_URL}/api/stock/sales`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify(data),
@@ -82,15 +101,24 @@ const stockSlice = createSlice({
     batchesStatus: 'idle',
     batchesError: null,
     // Entry action state
-    entryStatus: 'idle',   // idle | loading | succeeded | failed
+    entryStatus: 'idle',
     entryError: null,
     lastCreatedBatch: null,
+    // Sale action state
+    saleStatus: 'idle',
+    saleError: null,
+    lastSaleResult: null,
   },
   reducers: {
     clearEntryState(state) {
       state.entryStatus = 'idle';
       state.entryError = null;
       state.lastCreatedBatch = null;
+    },
+    clearSaleState(state) {
+      state.saleStatus = 'idle';
+      state.saleError = null;
+      state.lastSaleResult = null;
     },
   },
   extraReducers: (builder) => {
@@ -112,27 +140,40 @@ const stockSlice = createSlice({
       .addCase(registerStockEntry.fulfilled, (s, a) => {
         s.entryStatus = 'succeeded';
         s.lastCreatedBatch = a.payload;
-        // Append to batches list if already loaded
         if (s.batchesStatus === 'succeeded') {
           s.batches.unshift(a.payload);
         }
       })
       .addCase(registerStockEntry.rejected,  (s, a) => { s.entryStatus = 'failed'; s.entryError = a.payload; });
+
+    // ── registerSale ──
+    builder
+      .addCase(registerSale.pending,   (s) => { s.saleStatus = 'loading'; s.saleError = null; })
+      .addCase(registerSale.fulfilled, (s, a) => {
+        s.saleStatus = 'succeeded';
+        s.lastSaleResult = a.payload;
+      })
+      .addCase(registerSale.rejected,  (s, a) => { s.saleStatus = 'failed'; s.saleError = a.payload; });
   },
 });
 
-export const { clearEntryState } = stockSlice.actions;
+export const { clearEntryState, clearSaleState } = stockSlice.actions;
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
-export const selectStockSummary      = (s) => s.stock.summary;
-export const selectStockSummaryStatus= (s) => s.stock.summaryStatus;
-export const selectBatches           = (s) => s.stock.batches;
-export const selectBatchesStatus     = (s) => s.stock.batchesStatus;
-export const selectEntryAction       = (s) => ({
-  status:       s.stock.entryStatus,
-  error:        s.stock.entryError,
-  lastCreated:  s.stock.lastCreatedBatch,
+export const selectStockSummary       = (s) => s.stock.summary;
+export const selectStockSummaryStatus = (s) => s.stock.summaryStatus;
+export const selectBatches            = (s) => s.stock.batches;
+export const selectBatchesStatus      = (s) => s.stock.batchesStatus;
+export const selectEntryAction        = (s) => ({
+  status:      s.stock.entryStatus,
+  error:       s.stock.entryError,
+  lastCreated: s.stock.lastCreatedBatch,
+});
+export const selectSaleAction         = (s) => ({
+  status:     s.stock.saleStatus,
+  error:      s.stock.saleError,
+  lastResult: s.stock.lastSaleResult,
 });
 
 export default stockSlice.reducer;
