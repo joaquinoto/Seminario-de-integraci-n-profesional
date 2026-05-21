@@ -12,6 +12,8 @@ import {
   deleteProduct,
   clearProductActionState,
   selectProductAction,
+  selectProducts,
+  fetchProducts,
 } from '../features/catalog/productsSlice';
 import { selectToken, selectUser } from '../features/auth/authSlice';
 import { ConfirmDialog, TableSkeleton } from '../components/ui/CatalogUI';
@@ -22,10 +24,10 @@ import AppTopbar from '../components/layout/AppTopbar';
 const isOwner = (user) => user?.role === 'OWNER';
 
 const STATUS_CONFIG = {
-  EXPIRED: { label: 'Vencido',          color: '#C0392B', bg: 'rgba(192,57,43,0.10)',  icon: '💀', order: 0 },
-  RED:     { label: 'Vence hoy',        color: '#E74C3C', bg: 'rgba(231,76,60,0.10)',  icon: '🔴', order: 1 },
-  YELLOW:  { label: 'Vence pronto',     color: '#D68910', bg: 'rgba(214,137,16,0.10)', icon: '🟡', order: 2 },
-  GREEN:   { label: 'En buen estado',   color: '#1E8449', bg: 'rgba(30,132,73,0.10)',  icon: '🟢', order: 3 },
+  EXPIRED: { label: 'Vencido',        color: '#C0392B', bg: 'rgba(192,57,43,0.10)',  icon: '💀', order: 0 },
+  RED:     { label: 'Vence hoy',      color: '#E74C3C', bg: 'rgba(231,76,60,0.10)',  icon: '🔴', order: 1 },
+  YELLOW:  { label: 'Vence pronto',   color: '#D68910', bg: 'rgba(214,137,16,0.10)', icon: '🟡', order: 2 },
+  GREEN:   { label: 'En buen estado', color: '#1E8449', bg: 'rgba(30,132,73,0.10)',  icon: '🟢', order: 3 },
 };
 
 function StatusPill({ status }) {
@@ -48,23 +50,20 @@ function DaysChip({ days, status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.GREEN;
   const text = days < 0
     ? `Vencido hace ${Math.abs(days)} día${Math.abs(days) !== 1 ? 's' : ''}`
-    : days === 0
-      ? 'Vence hoy'
-      : `${days} día${days !== 1 ? 's' : ''}`;
-  return (
-    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: cfg.color }}>{text}</span>
-  );
+    : days === 0 ? 'Vence hoy'
+    : `${days} día${days !== 1 ? 's' : ''}`;
+  return <span style={{ fontSize: '0.84rem', fontWeight: 600, color: cfg.color }}>{text}</span>;
 }
 
-// ─── Summary bar ─────────────────────────────────────────────────────────────
+// ─── Summary pills ────────────────────────────────────────────────────────────
 
 function SummaryBar({ counts, activeFilter, onFilter }) {
   const pills = [
-    { key: 'ALL',    label: 'Todos',        count: counts.expired + counts.red + counts.yellow + counts.green, color: 'var(--espresso)', bg: 'var(--cream-dark)' },
-    { key: 'EXPIRED',label: 'Vencidos',     count: counts.expired, color: STATUS_CONFIG.EXPIRED.color, bg: STATUS_CONFIG.EXPIRED.bg },
-    { key: 'RED',    label: 'Vencen hoy',   count: counts.red,     color: STATUS_CONFIG.RED.color,     bg: STATUS_CONFIG.RED.bg     },
-    { key: 'YELLOW', label: 'Vencen pronto',count: counts.yellow,  color: STATUS_CONFIG.YELLOW.color,  bg: STATUS_CONFIG.YELLOW.bg  },
-    { key: 'GREEN',  label: 'En buen estado',count: counts.green,  color: STATUS_CONFIG.GREEN.color,   bg: STATUS_CONFIG.GREEN.bg   },
+    { key: 'ALL',    label: 'Todos',         count: counts.expired + counts.red + counts.yellow + counts.green, color: 'var(--espresso)', bg: 'var(--cream-dark)' },
+    { key: 'EXPIRED',label: 'Vencidos',      count: counts.expired, color: STATUS_CONFIG.EXPIRED.color, bg: STATUS_CONFIG.EXPIRED.bg },
+    { key: 'RED',    label: 'Vencen hoy',    count: counts.red,     color: STATUS_CONFIG.RED.color,     bg: STATUS_CONFIG.RED.bg     },
+    { key: 'YELLOW', label: 'Vencen pronto', count: counts.yellow,  color: STATUS_CONFIG.YELLOW.color,  bg: STATUS_CONFIG.YELLOW.bg  },
+    { key: 'GREEN',  label: 'En buen estado',count: counts.green,   color: STATUS_CONFIG.GREEN.color,   bg: STATUS_CONFIG.GREEN.bg   },
   ];
 
   return (
@@ -73,10 +72,7 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
         <button
           key={p.key}
           className={`summary-pill ${activeFilter === p.key ? 'active' : ''}`}
-          style={{
-            '--pill-color': p.color,
-            '--pill-bg': p.bg,
-          }}
+          style={{ '--pill-color': p.color, '--pill-bg': p.bg }}
           onClick={() => onFilter(p.key)}
         >
           <span className="pill-count">{p.count}</span>
@@ -86,17 +82,15 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
       <style>{`
         .summary-bar {
           display: flex; gap: 8px; flex-wrap: wrap;
-          padding: 14px 16px;
-          background: white; border-radius: var(--radius-lg);
-          border: 1px solid var(--cream-dark); box-shadow: var(--shadow-sm);
-          margin-bottom: var(--space-lg);
+          padding: 14px 16px; background: white;
+          border-radius: var(--radius-lg); border: 1px solid var(--cream-dark);
+          box-shadow: var(--shadow-sm); margin-bottom: var(--space-lg);
         }
         .summary-pill {
           display: flex; align-items: center; gap: 7px;
           padding: 8px 14px; border-radius: var(--radius-md);
-          border: 1.5px solid transparent;
-          background: var(--cream); cursor: pointer;
-          font-family: var(--font-body);
+          border: 1.5px solid transparent; background: var(--cream);
+          cursor: pointer; font-family: var(--font-body);
           transition: all var(--transition-fast);
         }
         .summary-pill:hover { background: var(--pill-bg); border-color: var(--pill-color); }
@@ -104,10 +98,7 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
           background: var(--pill-bg); border-color: var(--pill-color);
           box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
-        .pill-count {
-          font-size: 1.1rem; font-weight: 800;
-          color: var(--pill-color); line-height: 1;
-        }
+        .pill-count { font-size: 1.1rem; font-weight: 800; color: var(--pill-color); line-height: 1; }
         .pill-label { font-size: 0.78rem; font-weight: 600; color: var(--warm-gray); }
         .summary-pill.active .pill-label { color: var(--pill-color); }
       `}</style>
@@ -115,7 +106,7 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ExpirationPage() {
   const dispatch = useDispatch();
@@ -128,17 +119,31 @@ export default function ExpirationPage() {
   const fetchErr = useSelector(selectSemaphoreError);
   const { status: actStatus } = useSelector(selectProductAction);
 
+  // Productos del store de Redux — fuente de verdad del estado active/inactive
+  const allProducts = useSelector(selectProducts);
+
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [search,       setSearch]       = useState('');
-  // Deactivate confirm: stores { productId, productName, batchInfo }
-  const [confirmData,  setConfirmData]  = useState(null);
+  const [confirmData,  setConfirmData]  = useState(null); // { productId, productName }
 
-  // ── Fetch on mount & refresh ───────────────────────────────────────────────
+  // ── Fetch on mount ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (token) dispatch(fetchSemaphore({ token }));
+    if (!token) return;
+    dispatch(fetchSemaphore({ token }));
+    // Asegurar que el store de productos esté actualizado para conocer active/inactive
+    dispatch(fetchProducts({ token, params: { activeOnly: false } }));
   }, [token, dispatch]);
 
-  // ── Filter logic ───────────────────────────────────────────────────────────
+  // ── Helper: ¿el producto ya está inactivo en el store? ────────────────────
+  // Combina la info del semáforo (que podría estar cacheada) con el estado
+  // real del producto en Redux. Si no se encuentra en el store, se asume activo.
+  const isProductActive = (productId) => {
+    const found = allProducts.find((p) => p.id === productId);
+    if (!found) return true; // si no está en store, no bloqueamos (podría no haberse cargado)
+    return found.active;
+  };
+
+  // ── Filter ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...items];
     if (activeFilter !== 'ALL') list = list.filter((i) => i.status === activeFilter);
@@ -149,7 +154,7 @@ export default function ExpirationPage() {
     return list;
   }, [items, activeFilter, search]);
 
-  // Group by product for a cleaner view
+  // Agrupar por producto
   const grouped = useMemo(() => {
     const map = new Map();
     for (const item of filtered) {
@@ -161,23 +166,22 @@ export default function ExpirationPage() {
     return Array.from(map.values());
   }, [filtered]);
 
-  // ── Deactivate product (sets active=false) ─────────────────────────────────
+  // ── Deactivate ─────────────────────────────────────────────────────────────
   const handleDeactivateConfirm = () => {
     if (!confirmData) return;
     dispatch(deleteProduct({ token, id: confirmData.productId })).then(() => {
       dispatch(clearProductActionState());
       setConfirmData(null);
-      // Refresh semaphore after deactivating
+      // Refrescar semáforo: el backend ahora excluye productos inactivos,
+      // así que el producto desaparecerá de la lista.
       dispatch(fetchSemaphore({ token }));
     });
   };
 
   const deactivating = actStatus === 'loading' && confirmData !== null;
 
-  // Worst status per product (for the row indicator)
   const worstStatus = (batches) => {
-    const order = ['EXPIRED', 'RED', 'YELLOW', 'GREEN', 'NOT_APPLICABLE'];
-    for (const s of order) {
+    for (const s of ['EXPIRED', 'RED', 'YELLOW', 'GREEN']) {
       if (batches.some((b) => b.status === s)) return s;
     }
     return 'GREEN';
@@ -189,17 +193,18 @@ export default function ExpirationPage() {
 
       <div className="exp-content">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="exp-header">
           <div>
             <h1 className="exp-title">⏰ Vencimientos</h1>
             <p className="exp-subtitle">
-              Estado de los lotes en stock · {status === 'succeeded' ? `${items.length} lote${items.length !== 1 ? 's' : ''} con fecha` : ''}
+              Estado de los lotes activos en stock
+              {status === 'succeeded' && ` · ${items.length} lote${items.length !== 1 ? 's' : ''} con fecha`}
             </p>
           </div>
           <button
             className="exp-refresh-btn"
-            onClick={() => dispatch(fetchSemaphore({ token }))}
+            onClick={() => { dispatch(fetchSemaphore({ token })); dispatch(fetchProducts({ token, params: { activeOnly: false } })); }}
             disabled={status === 'loading'}
             title="Actualizar"
           >
@@ -208,20 +213,18 @@ export default function ExpirationPage() {
           </button>
         </div>
 
-        {/* ── Error ── */}
-        {fetchErr && (
-          <div className="exp-error">⚠ {fetchErr}</div>
-        )}
+        {/* Error */}
+        {fetchErr && <div className="exp-error">⚠ {fetchErr}</div>}
 
-        {/* ── Loading ── */}
+        {/* Loading */}
         {status === 'loading' && items.length === 0 && <TableSkeleton rows={6} />}
 
-        {/* ── Summary bar ── */}
+        {/* Summary */}
         {(status === 'succeeded' || items.length > 0) && (
           <SummaryBar counts={counts} activeFilter={activeFilter} onFilter={setActiveFilter} />
         )}
 
-        {/* ── Search + info ── */}
+        {/* Search + hint */}
         {items.length > 0 && (
           <div className="exp-controls">
             <div className="exp-search-wrap">
@@ -238,13 +241,15 @@ export default function ExpirationPage() {
             </div>
             {isOwner(user) && (
               <p className="exp-owner-hint">
-                💡 Como dueño podés <strong>retirar de la venta</strong> los productos con lotes vencidos desde aquí o desde la página de productos.
+                💡 <strong>Retirar de la venta</strong> desactiva el producto: deja de aparecer
+                en el catálogo y no puede usarse en nuevas operaciones de stock.
+                El historial se conserva.
               </p>
             )}
           </div>
         )}
 
-        {/* ── Empty ── */}
+        {/* Empty */}
         {status === 'succeeded' && filtered.length === 0 && (
           <div className="exp-empty">
             <span className="exp-empty-icon">
@@ -265,13 +270,15 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* ── Product groups ── */}
+        {/* Groups */}
         {grouped.length > 0 && (
           <div className="exp-groups">
             {grouped.map((group) => {
-              const worst = worstStatus(group.batches);
-              const cfg   = STATUS_CONFIG[worst] || STATUS_CONFIG.GREEN;
+              const worst     = worstStatus(group.batches);
+              const cfg       = STATUS_CONFIG[worst] || STATUS_CONFIG.GREEN;
               const hasUrgent = worst === 'EXPIRED' || worst === 'RED' || worst === 'YELLOW';
+              // ← CLAVE: chequear si el producto YA está inactivo en Redux
+              const productActive = isProductActive(group.productId);
 
               return (
                 <div
@@ -279,12 +286,18 @@ export default function ExpirationPage() {
                   className="exp-group"
                   style={{ '--group-color': cfg.color, '--group-bg': cfg.bg }}
                 >
-                  {/* Product header row */}
+                  {/* Product header */}
                   <div className="exp-group-header">
                     <div className="exp-group-left">
                       <div className="exp-group-indicator" style={{ background: cfg.color }} />
                       <div>
-                        <span className="exp-group-name">{group.productName}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className="exp-group-name">{group.productName}</span>
+                          {/* Badge "Inactivo" si el producto ya fue desactivado */}
+                          {!productActive && (
+                            <span className="exp-inactive-badge">🚫 Retirado de la venta</span>
+                          )}
+                        </div>
                         <span className="exp-group-count">
                           {group.batches.length} lote{group.batches.length !== 1 ? 's' : ''}
                         </span>
@@ -292,7 +305,6 @@ export default function ExpirationPage() {
                     </div>
 
                     <div className="exp-group-actions">
-                      {/* Go to product in catalog */}
                       <button
                         className="exp-action-btn secondary"
                         onClick={() => navigate('/products')}
@@ -301,8 +313,13 @@ export default function ExpirationPage() {
                         Ver producto
                       </button>
 
-                      {/* Deactivate — OWNER only, and only when there's something urgent */}
-                      {isOwner(user) && hasUrgent && (
+                      {/*
+                       * Mostrar "Retirar de la venta" SOLO si:
+                       *   1. Es OWNER
+                       *   2. Hay lotes urgentes (vencido / hoy / pronto)
+                       *   3. El producto todavía está activo en Redux
+                       */}
+                      {isOwner(user) && hasUrgent && productActive && (
                         <button
                           className="exp-action-btn danger"
                           onClick={() => setConfirmData({
@@ -349,7 +366,6 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* Count */}
         {grouped.length > 0 && (
           <p className="exp-count">
             {grouped.length} producto{grouped.length !== 1 ? 's' : ''} ·{' '}
@@ -358,7 +374,7 @@ export default function ExpirationPage() {
         )}
       </div>
 
-      {/* ── Deactivate confirm ── */}
+      {/* Confirm deactivate */}
       <ConfirmDialog
         isOpen={Boolean(confirmData)}
         onClose={() => setConfirmData(null)}
@@ -376,47 +392,34 @@ export default function ExpirationPage() {
 
       <style>{`
         .exp-page    { min-height: 100vh; background: var(--cream); }
-        .exp-content {
-          max-width: 1000px; margin: 0 auto;
-          padding: var(--space-xl) var(--space-lg);
-        }
+        .exp-content { max-width: 1000px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
 
-        /* Header */
         .exp-header {
           display: flex; align-items: flex-start; justify-content: space-between;
           gap: 16px; margin-bottom: var(--space-xl); flex-wrap: wrap;
         }
-        .exp-title {
-          font-family: var(--font-display); font-size: 1.8rem; font-weight: 700;
-          color: var(--espresso); margin-bottom: 4px;
-        }
+        .exp-title    { font-family: var(--font-display); font-size: 1.8rem; font-weight: 700; color: var(--espresso); margin-bottom: 4px; }
         .exp-subtitle { font-size: 0.85rem; color: var(--warm-gray); }
+
         .exp-refresh-btn {
-          display: flex; align-items: center; gap: 6px;
-          padding: 9px 16px; background: white;
-          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
-          font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
-          color: var(--warm-gray); cursor: pointer;
+          display: flex; align-items: center; gap: 6px; padding: 9px 16px;
+          background: white; border: 1.5px solid var(--cream-dark);
+          border-radius: var(--radius-md); font-family: var(--font-body);
+          font-size: 0.85rem; font-weight: 600; color: var(--warm-gray); cursor: pointer;
           transition: all var(--transition-fast);
         }
         .exp-refresh-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
         .exp-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 
-        /* Error */
         .exp-error {
-          padding: 12px 16px; background: var(--error-light);
-          border: 1px solid var(--error); border-radius: var(--radius-md);
-          color: var(--error); font-size: 0.88rem; margin-bottom: 16px;
+          padding: 12px 16px; background: var(--error-light); border: 1px solid var(--error);
+          border-radius: var(--radius-md); color: var(--error); font-size: 0.88rem; margin-bottom: 16px;
         }
 
-        /* Controls */
         .exp-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: var(--space-lg); }
         .exp-search-wrap { position: relative; max-width: 400px; }
-        .exp-search-icon {
-          position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-          font-size: 0.85rem; pointer-events: none;
-        }
+        .exp-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; pointer-events: none; }
         .exp-search {
           width: 100%; padding: 9px 36px;
           font-family: var(--font-body); font-size: 0.88rem;
@@ -427,108 +430,87 @@ export default function ExpirationPage() {
         .exp-search:focus { border-color: var(--amber); }
         .exp-search-clear {
           position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer;
-          color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
+          background: none; border: none; cursor: pointer; color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
         }
         .exp-owner-hint {
-          font-size: 0.8rem; color: var(--warm-gray);
-          padding: 10px 14px; background: rgba(200,137,58,0.06);
-          border: 1px solid rgba(200,137,58,0.2); border-radius: var(--radius-md);
-          line-height: 1.5; max-width: 600px;
+          font-size: 0.8rem; color: var(--warm-gray); padding: 10px 14px;
+          background: rgba(200,137,58,0.06); border: 1px solid rgba(200,137,58,0.2);
+          border-radius: var(--radius-md); line-height: 1.5; max-width: 600px;
         }
 
-        /* Empty */
-        .exp-empty {
-          display: flex; flex-direction: column; align-items: center;
-          gap: 10px; padding: 60px 24px; text-align: center;
-        }
+        .exp-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center; }
         .exp-empty-icon  { font-size: 2.4rem; opacity: 0.5; }
         .exp-empty-title { font-family: var(--font-display); font-size: 1.05rem; color: var(--espresso); font-weight: 700; }
         .exp-empty-reset {
-          margin-top: 4px; padding: 8px 20px;
-          background: var(--cream-dark); border: none; border-radius: var(--radius-md);
-          font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
-          color: var(--warm-gray); cursor: pointer;
-          transition: all var(--transition-fast);
+          margin-top: 4px; padding: 8px 20px; background: var(--cream-dark); border: none;
+          border-radius: var(--radius-md); font-family: var(--font-body); font-size: 0.85rem;
+          font-weight: 600; color: var(--warm-gray); cursor: pointer; transition: all var(--transition-fast);
         }
         .exp-empty-reset:hover { background: var(--cream-medium); color: var(--espresso); }
 
-        /* Groups */
         .exp-groups { display: flex; flex-direction: column; gap: 10px; }
 
         .exp-group {
           background: white; border-radius: var(--radius-lg);
           border: 1.5px solid var(--group-color);
-          box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-          overflow: hidden;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.04); overflow: hidden;
           animation: fadeIn 0.3s ease both;
         }
 
         .exp-group-header {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; padding: 14px 18px;
-          background: var(--group-bg);
-          border-bottom: 1px solid rgba(0,0,0,0.05);
-          flex-wrap: wrap;
+          gap: 12px; padding: 14px 18px; background: var(--group-bg);
+          border-bottom: 1px solid rgba(0,0,0,0.05); flex-wrap: wrap;
         }
-        .exp-group-left {
-          display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;
-        }
-        .exp-group-indicator {
-          width: 4px; height: 36px; border-radius: 2px; flex-shrink: 0;
-        }
-        .exp-group-name {
-          display: block; font-weight: 700; font-size: 0.98rem; color: var(--espresso);
-        }
-        .exp-group-count {
-          display: block; font-size: 0.74rem; color: var(--warm-gray); margin-top: 1px;
+        .exp-group-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+        .exp-group-indicator { width: 4px; height: 36px; border-radius: 2px; flex-shrink: 0; }
+        .exp-group-name  { display: block; font-weight: 700; font-size: 0.98rem; color: var(--espresso); }
+        .exp-group-count { display: block; font-size: 0.74rem; color: var(--warm-gray); margin-top: 1px; }
+
+        /* Badge "Retirado de la venta" */
+        .exp-inactive-badge {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
+          color: #7f1d1d; background: rgba(127,29,29,0.1);
+          white-space: nowrap;
         }
 
         .exp-group-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .exp-action-btn {
           padding: 7px 14px; border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
-          cursor: pointer; transition: all var(--transition-fast);
-          white-space: nowrap;
+          cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
         }
         .exp-action-btn.secondary {
           background: white; border: 1.5px solid var(--cream-dark); color: var(--warm-gray);
         }
         .exp-action-btn.secondary:hover { border-color: var(--espresso); color: var(--espresso); }
         .exp-action-btn.danger {
-          background: rgba(192,57,43,0.08); border: 1.5px solid rgba(192,57,43,0.3);
-          color: #C0392B;
+          background: rgba(192,57,43,0.08); border: 1.5px solid rgba(192,57,43,0.3); color: #C0392B;
         }
-        .exp-action-btn.danger:hover {
-          background: rgba(192,57,43,0.15); border-color: #C0392B;
-        }
+        .exp-action-btn.danger:hover { background: rgba(192,57,43,0.15); border-color: #C0392B; }
 
-        /* Batch rows */
         .exp-batches { display: flex; flex-direction: column; }
         .exp-batch-row {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; padding: 12px 18px;
-          border-bottom: 1px solid var(--cream-dark);
+          gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--cream-dark);
           transition: background var(--transition-fast);
         }
         .exp-batch-row:last-child { border-bottom: none; }
-        .exp-batch-row:hover { background: var(--cream); }
+        .exp-batch-row:hover      { background: var(--cream); }
         .exp-batch-left  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         .exp-batch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
         .exp-batch-date  { font-size: 0.82rem; color: var(--warm-gray); }
         .exp-batch-qty   { font-weight: 700; font-size: 0.88rem; color: var(--espresso); }
         .exp-batch-id    { font-size: 0.72rem; color: var(--warm-gray-light); }
 
-        /* Count */
-        .exp-count {
-          text-align: right; font-size: 0.78rem;
-          color: var(--warm-gray-light); margin-top: 12px;
-        }
+        .exp-count { text-align: right; font-size: 0.78rem; color: var(--warm-gray-light); margin-top: 12px; }
 
         @media (max-width: 600px) {
           .exp-group-header { flex-direction: column; align-items: flex-start; }
           .exp-batch-left   { gap: 8px; }
           .hide-sm          { display: none; }
+          .exp-content      { padding: var(--space-lg) var(--space-md); }
         }
       `}</style>
     </div>

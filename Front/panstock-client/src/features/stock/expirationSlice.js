@@ -51,16 +51,14 @@ export const fetchExpired = createAsyncThunk(
 const expirationSlice = createSlice({
   name: 'expiration',
   initialState: {
-    // Semaphore summary
     greenCount:   0,
     yellowCount:  0,
     redCount:     0,
     expiredCount: 0,
-    // Full item list (ExpirationItemResponse[])
     items: [],
-    semaphoreStatus: 'idle',   // idle | loading | succeeded | failed
+    semaphoreStatus: 'idle',   
     semaphoreError:  null,
-    lastFetch: null,           // timestamp — para saber si el cache es fresco
+    lastFetch: null,           
   },
   reducers: {
     clearExpirationState(state) {
@@ -75,7 +73,7 @@ const expirationSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // ── fetchSemaphore ──
+    // ── fetchSemaforo ──
     builder
       .addCase(fetchSemaphore.pending, (s) => {
         s.semaphoreStatus = 'loading';

@@ -273,7 +273,7 @@ INSERT INTO product_categories (id, name, description, active, created_at, updat
 (9, 'Insumos cafetería',       'Granos de café, azúcar, edulcorante, canela, cacao.',           TRUE,  NOW(), NOW());
 
 -- -------------------------------------------------------
--- PROVEEDORES (datos reales del PDF)
+-- PROVEEDORES 
 -- -------------------------------------------------------
 INSERT INTO suppliers (id, name, supplier_type, contact_name, phone, email, notes, active, created_at, updated_at) VALUES
 (1, 'Dulce Hora Franquicia',        'FRANCHISE',  'Distribuidora Dulce Hora', NULL, NULL,
