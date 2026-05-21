@@ -16,6 +16,7 @@ import categoriesReducer from '../features/catalog/categoriesSlice';
 import productsReducer   from '../features/catalog/productsSlice';
 import suppliersReducer  from '../features/catalog/suppliersSlice';
 import expirationReducer from '../features/stock/expirationSlice';
+import stockReducer      from '../features/stock/stockSlice';
 
 // ─── Persist configs ──────────────────────────────────────────────────────────
 
@@ -43,13 +44,15 @@ const suppliersPersistConfig = {
   whitelist: ['items'],
 };
 
-// Expiration: solo persistir los conteos del badge del topbar,
-// no la lista completa (se refresca siempre al entrar a la página)
+// Expiration: only persist badge counts — list refreshes on page visit
 const expirationPersistConfig = {
   key: 'panstock-expiration',
   storage,
   whitelist: ['greenCount', 'yellowCount', 'redCount', 'expiredCount'],
 };
+
+// Stock: do NOT persist — always fetch fresh data
+// (no persistReducer wrapper needed)
 
 // ─── Root Reducer ─────────────────────────────────────────────────────────────
 
@@ -59,6 +62,7 @@ const rootReducer = combineReducers({
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
   expiration: persistReducer(expirationPersistConfig, expirationReducer),
+  stock:      stockReducer,   // no persistence — always fresh
 });
 
 // ─── Store ────────────────────────────────────────────────────────────────────

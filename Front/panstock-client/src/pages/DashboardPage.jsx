@@ -10,6 +10,12 @@ const roleLabels = {
   EMPLOYEE: { label: 'Empleado/a',        color: '#2E7D32', bg: 'rgba(46,125,50,0.10)',  icon: '👤' },
 };
 
+// Both roles can access these
+const MAIN_MODULES = [
+  { icon: '📦', title: 'Stock',        desc: 'Inventario, lotes e ingresos',           to: '/stock'      },
+  { icon: '⏰', title: 'Vencimientos', desc: 'Semáforo de fechas de vencimiento',      to: '/expiration' },
+];
+
 const CATALOG_MODULES = [
   { icon: '🥐', title: 'Productos',   desc: 'Catálogo de franquicia y externos',     to: '/products'   },
   { icon: '🗂',  title: 'Categorías',  desc: 'Grupos y clasificaciones',               to: '/categories' },
@@ -17,7 +23,6 @@ const CATALOG_MODULES = [
 ];
 
 const COMING_MODULES = [
-  { icon: '📦', title: 'Stock',       desc: 'Gestión de lotes e inventario'  },
   { icon: '📊', title: 'Reportes',    desc: 'Mermas y pérdidas económicas'   },
   { icon: '🏷️', title: 'Promociones', desc: 'Descuentos por vencimiento'     },
 ];
@@ -32,7 +37,6 @@ export default function DashboardPage() {
 
   const role = roleLabels[user?.role] || roleLabels.EMPLOYEE;
 
-  // Cargar semáforo al entrar al dashboard para tener el badge actualizado
   useEffect(() => {
     if (token) dispatch(fetchSemaphore({ token }));
   }, [token, dispatch]);
@@ -63,7 +67,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Semáforo de vencimientos — card destacada ── */}
+        {/* ── Semáforo ── */}
         <button
           className="semaphore-card"
           onClick={() => navigate('/expiration')}
@@ -101,6 +105,40 @@ export default function DashboardPage() {
           <span className="sem-arrow">→</span>
         </button>
 
+        {/* ── Operaciones principales (ambos roles) ── */}
+        <div>
+          <h2 className="section-heading">Operaciones</h2>
+          <div className="modules-grid">
+            {MAIN_MODULES.map((m) => (
+              <button key={m.title} className="module-card ready" onClick={() => navigate(m.to)}>
+                <span className="module-icon">{m.icon}</span>
+                <div className="module-text">
+                  <p className="module-title">{m.title}</p>
+                  <p className="module-desc">{m.desc}</p>
+                </div>
+                <span className="module-arrow">→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Catálogo ── */}
+        <div>
+          <h2 className="section-heading">Catálogo</h2>
+          <div className="modules-grid">
+            {CATALOG_MODULES.map((m) => (
+              <button key={m.title} className="module-card ready" onClick={() => navigate(m.to)}>
+                <span className="module-icon">{m.icon}</span>
+                <div className="module-text">
+                  <p className="module-title">{m.title}</p>
+                  <p className="module-desc">{m.desc}</p>
+                </div>
+                <span className="module-arrow">→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* ── Account info ── */}
         <div className="info-card">
           <h2 className="info-title">Información de cuenta</h2>
@@ -121,23 +159,6 @@ export default function DashboardPage() {
               <span className="info-label">Rol</span>
               <span className="info-value">{role.icon} {role.label}</span>
             </div>
-          </div>
-        </div>
-
-        {/* ── Catálogo ── */}
-        <div>
-          <h2 className="section-heading">Catálogo</h2>
-          <div className="modules-grid">
-            {CATALOG_MODULES.map((m) => (
-              <button key={m.title} className="module-card ready" onClick={() => navigate(m.to)}>
-                <span className="module-icon">{m.icon}</span>
-                <div className="module-text">
-                  <p className="module-title">{m.title}</p>
-                  <p className="module-desc">{m.desc}</p>
-                </div>
-                <span className="module-arrow">→</span>
-              </button>
-            ))}
           </div>
         </div>
 

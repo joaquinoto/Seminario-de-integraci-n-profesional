@@ -18,6 +18,7 @@ export default function AppTopbar() {
 
   const NAV_ITEMS = [
     { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
+    { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
     { to: '/expiration', label: 'Vencimientos', icon: '⏰',
       badge: urgentCount > 0 ? urgentCount : null,
       badgeColor: counts.expired > 0 ? '#C0392B' : counts.red > 0 ? '#E74C3C' : '#E67E22',
@@ -96,14 +97,15 @@ export default function AppTopbar() {
           font-family: var(--font-display); font-size: 1.1rem; font-weight: 700;
           color: var(--espresso); letter-spacing: -0.01em;
         }
-        .topbar-nav { display: flex; align-items: center; gap: 2px; flex: 1; }
+        .topbar-nav { display: flex; align-items: center; gap: 2px; flex: 1; overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none; }
+        .topbar-nav::-webkit-scrollbar { display: none; }
         .topbar-link {
           position: relative; display: flex; align-items: center; gap: 5px;
           padding: 6px 10px; border-radius: var(--radius-md);
           text-decoration: none; font-size: 0.84rem; font-weight: 500;
           color: var(--warm-gray);
           transition: background var(--transition-fast), color var(--transition-fast);
-          white-space: nowrap;
+          white-space: nowrap; flex-shrink: 0;
         }
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
         .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
@@ -129,14 +131,14 @@ export default function AppTopbar() {
           background: none; border: 1.5px solid var(--cream-dark);
           border-radius: var(--radius-md); font-family: var(--font-body);
           font-size: 0.82rem; color: var(--warm-gray); cursor: pointer;
-          transition: all var(--transition-fast);
+          transition: all var(--transition-fast); flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
         @media (max-width: 780px) {
           .hide-mobile { display: none; }
           .topbar-link-label { display: none; }
           .topbar-link { padding: 8px; }
-          .topbar-inner { gap: var(--space-sm); padding: 0 var(--space-md); }
+          .topbar-inner { gap: var(--space-sm); padding: 0 var(--space-sm); }
         }
       `}</style>
     </header>
