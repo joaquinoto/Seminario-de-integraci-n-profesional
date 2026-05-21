@@ -319,6 +319,4 @@ Los siguientes módulos están previstos pero no desarrollados aún:
 
 - Configuración del sistema (/api/settings) 
 
-- Gestión de usuarios (/users) 
-
 
