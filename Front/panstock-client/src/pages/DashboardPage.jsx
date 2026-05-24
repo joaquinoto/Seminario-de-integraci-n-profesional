@@ -13,6 +13,7 @@ const roleLabels = {
 // Both roles can access these
 const MAIN_MODULES = [
   { icon: '📦', title: 'Stock',        desc: 'Inventario, lotes e ingresos',           to: '/stock'      },
+  { icon: '🗑️', title: 'Mermas',       desc: 'Registro de descartes y desperdicios',   to: '/waste'      },
   { icon: '⏰', title: 'Vencimientos', desc: 'Semáforo de fechas de vencimiento',      to: '/expiration' },
 ];
 

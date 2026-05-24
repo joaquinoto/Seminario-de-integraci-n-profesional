@@ -17,6 +17,7 @@ import productsReducer   from '../features/catalog/productsSlice';
 import suppliersReducer  from '../features/catalog/suppliersSlice';
 import expirationReducer from '../features/stock/expirationSlice';
 import stockReducer      from '../features/stock/stockSlice';
+import wasteReducer      from '../features/waste/wasteSlice';
 
 // ─── Persist configs ──────────────────────────────────────────────────────────
 
@@ -51,8 +52,7 @@ const expirationPersistConfig = {
   whitelist: ['greenCount', 'yellowCount', 'redCount', 'expiredCount'],
 };
 
-// Stock: do NOT persist — always fetch fresh data
-// (no persistReducer wrapper needed)
+// Stock and Waste: do NOT persist — always fetch fresh data
 
 // ─── Root Reducer ─────────────────────────────────────────────────────────────
 
@@ -62,7 +62,8 @@ const rootReducer = combineReducers({
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
   expiration: persistReducer(expirationPersistConfig, expirationReducer),
-  stock:      stockReducer,   // no persistence — always fresh
+  stock:      stockReducer,  // no persistence — always fresh
+  waste:      wasteReducer,  // no persistence — always fresh
 });
 
 // ─── Store ────────────────────────────────────────────────────────────────────

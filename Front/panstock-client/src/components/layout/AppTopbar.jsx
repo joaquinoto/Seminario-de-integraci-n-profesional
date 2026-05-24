@@ -19,6 +19,7 @@ export default function AppTopbar() {
   const NAV_ITEMS = [
     { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
     { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
+    { to: '/waste',      label: 'Mermas',       icon: '🗑️', badge: null },
     { to: '/expiration', label: 'Vencimientos', icon: '⏰',
       badge: urgentCount > 0 ? urgentCount : null,
       badgeColor: counts.expired > 0 ? '#C0392B' : counts.red > 0 ? '#E74C3C' : '#E67E22',

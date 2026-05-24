@@ -11,6 +11,7 @@ import ProductsPage    from './pages/ProductsPage';
 import CategoriesPage  from './pages/CategoriesPage';
 import SuppliersPage   from './pages/SuppliersPage';
 import StockPage       from './pages/StockPage';
+import WastePage       from './pages/WastePage';
 
 function TokenGuard() {
   const dispatch = useDispatch();
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/dashboard"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/expiration" element={<ProtectedRoute><ExpirationPage /></ProtectedRoute>} />
         <Route path="/stock"      element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
+        <Route path="/waste"      element={<ProtectedRoute><WastePage /></ProtectedRoute>} />
         <Route path="/products"   element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
         <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
         <Route path="/suppliers"  element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />
