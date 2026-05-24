@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -89,7 +91,20 @@ public class WasteRecordServiceImpl implements WasteRecordService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<WasteRecordResponse> findAll() {
+    public List<WasteRecordResponse> findAll(LocalDate from, LocalDate to) {
+        if (from != null && to != null) {
+            // Filtro por rango de fechas
+            if (to.isBefore(from)) {
+                throw new BadRequestException("La fecha hasta no puede ser anterior a la fecha desde.");
+            }
+            LocalDateTime fromDateTime = from.atStartOfDay();
+            LocalDateTime toDateTime   = to.plusDays(1).atStartOfDay().minusNanos(1);
+            return wasteRecordRepository.findByWasteDateBetween(fromDateTime, toDateTime)
+                    .stream()
+                    .map(WasteRecordMapper::toResponse)
+                    .toList();
+        }
+        // Sin filtro: todo el historial
         return wasteRecordRepository.findAll()
                 .stream()
                 .map(WasteRecordMapper::toResponse)

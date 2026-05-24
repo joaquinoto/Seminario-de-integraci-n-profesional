@@ -3,12 +3,15 @@ import { useNavigate, NavLink } from 'react-router-dom';
 import { logout, selectUser } from '../../features/auth/authSlice';
 import { selectSemaphoreCounts } from '../../features/stock/expirationSlice';
 
+const isOwner = (user) => user?.role === 'OWNER';
+
 export default function AppTopbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user     = useSelector(selectUser);
   const counts   = useSelector(selectSemaphoreCounts);
 
+  const owner = isOwner(user);
   const urgentCount = counts.expired + counts.red + counts.yellow;
 
   const handleLogout = () => {
@@ -16,17 +19,42 @@ export default function AppTopbar() {
     navigate('/login', { replace: true });
   };
 
-  const NAV_ITEMS = [
-    { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
-    { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
-    { to: '/waste',      label: 'Mermas',       icon: '🗑️', badge: null },
-    { to: '/expiration', label: 'Vencimientos', icon: '⏰',
+  // Ítems disponibles para AMBOS roles
+  const COMMON_ITEMS = [
+    { to: '/dashboard',  label: 'Inicio',       icon: '🏠', badge: null },
+    { to: '/stock',      label: 'Stock',         icon: '📦', badge: null },
+    {
+      to: '/expiration',
+      label: 'Vencimientos',
+      icon: '⏰',
       badge: urgentCount > 0 ? urgentCount : null,
       badgeColor: counts.expired > 0 ? '#C0392B' : counts.red > 0 ? '#E74C3C' : '#E67E22',
+    },
+  ];
+
+  // Ítems solo para OWNER
+  const OWNER_ITEMS = [
+    {
+      to: '/waste',
+      label: 'Mermas',
+      icon: '🗑️',
+      badge: null,
+      ownerBadge: true, // muestra indicador "solo dueño"
     },
     { to: '/products',   label: 'Productos',    icon: '🥐', badge: null },
     { to: '/categories', label: 'Categorías',   icon: '🗂',  badge: null },
     { to: '/suppliers',  label: 'Proveedores',  icon: '🚚', badge: null },
+  ];
+
+  // Ítems para EMPLOYEE (acceso de lectura a mermas, sin catálogo)
+  const EMPLOYEE_ITEMS = [
+    { to: '/waste',    label: 'Mermas',    icon: '🗑️', badge: null, readonly: true },
+    { to: '/products', label: 'Productos', icon: '🥐', badge: null },
+  ];
+
+  const NAV_ITEMS = [
+    ...COMMON_ITEMS,
+    ...(owner ? OWNER_ITEMS : EMPLOYEE_ITEMS),
   ];
 
   return (
@@ -43,6 +71,7 @@ export default function AppTopbar() {
               key={item.to}
               to={item.to}
               className={({ isActive }) => `topbar-link ${isActive ? 'active' : ''}`}
+              title={item.readonly ? 'Solo lectura' : item.label}
             >
               <span className="topbar-link-icon">{item.icon}</span>
               <span className="topbar-link-label">{item.label}</span>
@@ -51,6 +80,12 @@ export default function AppTopbar() {
                   {item.badge > 99 ? '99+' : item.badge}
                 </span>
               )}
+              {item.ownerBadge && owner && (
+                <span className="topbar-owner-dot" title="Solo dueño/encargado" />
+              )}
+              {item.readonly && (
+                <span className="topbar-readonly-dot" title="Solo lectura" />
+              )}
             </NavLink>
           ))}
         </nav>
@@ -58,12 +93,15 @@ export default function AppTopbar() {
         <div className="topbar-user">
           {user && (
             <div className="topbar-user-info">
-              <span className="topbar-avatar">
+              <span
+                className={`topbar-avatar ${owner ? 'avatar-owner' : 'avatar-employee'}`}
+                title={owner ? 'Dueño / Encargado' : 'Empleado/a'}
+              >
                 {user.firstName?.[0]?.toUpperCase() || '?'}
               </span>
               <span className="topbar-username hide-mobile">
                 {user.firstName}&nbsp;·&nbsp;
-                <span className="topbar-role">{user.role === 'OWNER' ? '👑' : '👤'}</span>
+                <span className="topbar-role">{owner ? '👑' : '👤'}</span>
               </span>
             </div>
           )}
@@ -98,7 +136,10 @@ export default function AppTopbar() {
           font-family: var(--font-display); font-size: 1.1rem; font-weight: 700;
           color: var(--espresso); letter-spacing: -0.01em;
         }
-        .topbar-nav { display: flex; align-items: center; gap: 2px; flex: 1; overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none; }
+        .topbar-nav {
+          display: flex; align-items: center; gap: 2px; flex: 1;
+          overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
+        }
         .topbar-nav::-webkit-scrollbar { display: none; }
         .topbar-link {
           position: relative; display: flex; align-items: center; gap: 5px;
@@ -111,6 +152,7 @@ export default function AppTopbar() {
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
         .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
         .topbar-link-icon   { font-size: 0.95rem; }
+
         .topbar-badge {
           display: inline-flex; align-items: center; justify-content: center;
           min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
@@ -118,14 +160,30 @@ export default function AppTopbar() {
           animation: pulse-badge 2s ease infinite;
         }
         @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+        /* Dot de "solo owner" (rojo pequeño en la esquina) */
+        .topbar-owner-dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #C0392B; flex-shrink: 0;
+          animation: pulse-badge 3s ease infinite;
+        }
+        /* Dot de "solo lectura" (gris) */
+        .topbar-readonly-dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: var(--warm-gray-light); flex-shrink: 0;
+        }
+
         .topbar-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .topbar-user-info { display: flex; align-items: center; gap: 8px; }
         .topbar-avatar {
           width: 30px; height: 30px; border-radius: 50%;
-          background: var(--amber); color: white;
           display: flex; align-items: center; justify-content: center;
-          font-family: var(--font-display); font-size: 0.85rem; font-weight: 700; flex-shrink: 0;
+          font-family: var(--font-display); font-size: 0.85rem; font-weight: 700;
+          flex-shrink: 0; color: white;
         }
+        .avatar-owner    { background: var(--amber); }
+        .avatar-employee { background: #2E7D32; }
+
         .topbar-username { font-size: 0.82rem; color: var(--warm-gray); font-weight: 500; }
         .topbar-logout {
           display: flex; align-items: center; gap: 5px; padding: 7px 12px;
@@ -135,6 +193,7 @@ export default function AppTopbar() {
           transition: all var(--transition-fast); flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
+
         @media (max-width: 780px) {
           .hide-mobile { display: none; }
           .topbar-link-label { display: none; }
