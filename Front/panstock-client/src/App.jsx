@@ -13,6 +13,10 @@ import SuppliersPage   from './pages/SuppliersPage';
 import StockPage       from './pages/StockPage';
 import WastePage       from './pages/WastePage';
 
+/**
+ * TokenGuard — verifica en cada render si el JWT del store sigue vigente.
+ * Si expiró, hace logout automático y redirige al login.
+ */
 function TokenGuard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -24,8 +28,13 @@ function TokenGuard() {
     try {
       const payload   = JSON.parse(atob(token.split('.')[1]));
       const isExpired = payload.exp * 1000 < Date.now();
-      if (isExpired) { dispatch(logout()); navigate('/login', { replace: true }); }
-    } catch { dispatch(logout()); }
+      if (isExpired) {
+        dispatch(logout());
+        navigate('/login', { replace: true });
+      }
+    } catch {
+      dispatch(logout());
+    }
   }, [token, isAuth, dispatch, navigate]);
 
   return null;
@@ -38,15 +47,21 @@ export default function App() {
     <>
       <TokenGuard />
       <Routes>
-        {/* Public */}
-        <Route path="/login"    element={isAuth ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-        <Route path="/register" element={isAuth ? <Navigate to="/dashboard" replace /> : <RegisterPage />} />
+        {/* Rutas públicas */}
+        <Route
+          path="/login"
+          element={isAuth ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+        />
+        <Route
+          path="/register"
+          element={isAuth ? <Navigate to="/dashboard" replace /> : <RegisterPage />}
+        />
 
-        {/* Protected */}
+        {/* Rutas protegidas — ambos roles (OWNER y EMPLOYEE) */}
         <Route path="/dashboard"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/expiration" element={<ProtectedRoute><ExpirationPage /></ProtectedRoute>} />
         <Route path="/stock"      element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
         <Route path="/waste"      element={<ProtectedRoute><WastePage /></ProtectedRoute>} />
+        <Route path="/expiration" element={<ProtectedRoute><ExpirationPage /></ProtectedRoute>} />
         <Route path="/products"   element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
         <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
         <Route path="/suppliers"  element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />

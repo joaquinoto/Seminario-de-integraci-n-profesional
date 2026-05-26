@@ -14,9 +14,14 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class AuthenticationResponse {
+
     @NotNull
     @JsonProperty("access_token")
     private String accessToken;
+
+    // ID del usuario autenticado — necesario para operaciones que requieren userId
+    @JsonProperty("user_id")
+    private Long userId;
 
     @NotNull
     private String username;

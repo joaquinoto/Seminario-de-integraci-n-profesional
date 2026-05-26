@@ -9,7 +9,6 @@ const authHeaders = (token) => ({
 
 const handleResponse = async (res) => {
   if (res.status === 204) return null;
-  if (res.status === 403) throw new Error('No tenés permiso para realizar esta acción.');
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = data?.message || data?.error || `Error ${res.status}`;
@@ -26,17 +25,28 @@ const handleResponse = async (res) => {
 
 /**
  * GET /api/waste-records
- * Soporta filtro ?from=YYYY-MM-DD&to=YYYY-MM-DD
- * Acceso: OWNER y EMPLOYEE (solo lectura)
+ *
+ * Parámetros opcionales:
+ *   params.from        → YYYY-MM-DD  (fecha desde)
+ *   params.to          → YYYY-MM-DD  (fecha hasta)
+ *   params.categoryId  → número
+ *   params.supplierId  → número
+ *   params.reason      → WasteReason enum string
+ *   params.createdById → número (ID del usuario que registró)
  */
 export const fetchWasteRecords = createAsyncThunk(
   'waste/fetchAll',
-  async ({ token, from = null, to = null }, { rejectWithValue }) => {
+  async ({ token, params = {} } = {}, { rejectWithValue }) => {
     try {
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to)   params.set('to', to);
-      const qs = params.toString();
+      const q = new URLSearchParams();
+      if (params.from)        q.set('from',        params.from);
+      if (params.to)          q.set('to',          params.to);
+      if (params.categoryId)  q.set('categoryId',  String(params.categoryId));
+      if (params.supplierId)  q.set('supplierId',  String(params.supplierId));
+      if (params.reason)      q.set('reason',      params.reason);
+      if (params.createdById) q.set('createdById', String(params.createdById));
+
+      const qs = q.toString();
       return await fetch(`${BASE_URL}/api/waste-records${qs ? `?${qs}` : ''}`, {
         headers: authHeaders(token),
       }).then(handleResponse);
@@ -48,7 +58,8 @@ export const fetchWasteRecords = createAsyncThunk(
 
 /**
  * POST /api/waste-records
- * Acceso: SOLO OWNER (el backend devuelve 403 si es EMPLOYEE)
+ * Body: { batchId, userId, quantity, reason, notes? }
+ * userId es REQUERIDO — identifica quién registró la merma.
  */
 export const createWasteRecord = createAsyncThunk(
   'waste/create',
@@ -65,96 +76,110 @@ export const createWasteRecord = createAsyncThunk(
   }
 );
 
+/**
+ * GET /users  — carga la lista de usuarios para el filtro "Registrado por".
+ * Solo el OWNER tiene acceso completo; el EMPLOYEE verá solo su propio registro
+ * igualmente porque el backend filtra por su userId en ese caso.
+ */
+export const fetchUsers = createAsyncThunk(
+  'waste/fetchUsers',
+  async ({ token }, { rejectWithValue }) => {
+    try {
+      return await fetch(`${BASE_URL}/users`, {
+        headers: authHeaders(token),
+      }).then(handleResponse);
+    } catch (e) {
+      return rejectWithValue(e.message);
+    }
+  }
+);
+
 // ─── Slice ───────────────────────────────────────────────────────────────────
 
 const wasteSlice = createSlice({
   name: 'waste',
   initialState: {
-    items: [],
-    filters: { from: '', to: '' },
-    listStatus: 'idle',
-    listError: null,
-    actionStatus: 'idle',
-    actionError: null,
-    lastCreated: null,
+    items:        [],
+    listStatus:   'idle',   // idle | loading | succeeded | failed
+    listError:    null,
+    actionStatus: 'idle',   // idle | loading | succeeded | failed
+    actionError:  null,
+    lastCreated:  null,
+
+    // Lista de usuarios para el filtro (cargada solo si el usuario es OWNER)
+    users:        [],
+    usersStatus:  'idle',
+
+    // Filtros activos — persistidos en redux-persist para mantener estado
+    activeFilters: {
+      from:        '',
+      to:          '',
+      categoryId:  '',
+      supplierId:  '',
+      reason:      '',
+      createdById: '',   // NUEVO: filtro por usuario
+    },
   },
   reducers: {
     clearWasteActionState(state) {
       state.actionStatus = 'idle';
-      state.actionError = null;
-      state.lastCreated = null;
+      state.actionError  = null;
+      state.lastCreated  = null;
     },
     setWasteFilters(state, action) {
-      state.filters = { ...state.filters, ...action.payload };
+      state.activeFilters = { ...state.activeFilters, ...action.payload };
     },
     clearWasteFilters(state) {
-      state.filters = { from: '', to: '' };
+      state.activeFilters = {
+        from: '', to: '', categoryId: '', supplierId: '', reason: '', createdById: '',
+      };
     },
   },
   extraReducers: (builder) => {
     builder
       .addCase(fetchWasteRecords.pending,   (s) => { s.listStatus = 'loading'; s.listError = null; })
-      .addCase(fetchWasteRecords.fulfilled, (s, a) => { s.listStatus = 'succeeded'; s.items = a.payload; })
+      .addCase(fetchWasteRecords.fulfilled, (s, a) => { s.listStatus = 'succeeded'; s.items = a.payload ?? []; })
       .addCase(fetchWasteRecords.rejected,  (s, a) => { s.listStatus = 'failed'; s.listError = a.payload; });
 
     builder
       .addCase(createWasteRecord.pending,   (s) => { s.actionStatus = 'loading'; s.actionError = null; })
       .addCase(createWasteRecord.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
-        s.lastCreated = a.payload;
-        s.items.unshift(a.payload);
+        s.lastCreated  = a.payload;
+        if (s.items) s.items.unshift(a.payload);
       })
       .addCase(createWasteRecord.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
+
+    builder
+      .addCase(fetchUsers.pending,   (s) => { s.usersStatus = 'loading'; })
+      .addCase(fetchUsers.fulfilled, (s, a) => {
+        s.usersStatus = 'succeeded';
+        // La respuesta de GET /users es una Page<User>; extraemos el content
+        const raw = a.payload;
+        s.users = Array.isArray(raw) ? raw : (raw?.content ?? []);
+      })
+      .addCase(fetchUsers.rejected,  (s) => { s.usersStatus = 'failed'; });
   },
 });
 
-export const { clearWasteActionState, setWasteFilters, clearWasteFilters } = wasteSlice.actions;
+export const {
+  clearWasteActionState,
+  setWasteFilters,
+  clearWasteFilters,
+} = wasteSlice.actions;
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
 export const selectWasteRecords     = (s) => s.waste.items;
-export const selectWasteFilters     = (s) => s.waste.filters;
 export const selectWasteListStatus  = (s) => s.waste.listStatus;
 export const selectWasteListError   = (s) => s.waste.listError;
+export const selectWasteFilters     = (s) => s.waste.activeFilters;
+export const selectWasteUsers       = (s) => s.waste.users;
+export const selectWasteUsersStatus = (s) => s.waste.usersStatus;
 export const selectWasteAction      = (s) => ({
   status:      s.waste.actionStatus,
   error:       s.waste.actionError,
   lastCreated: s.waste.lastCreated,
 });
-
-/** Métricas económicas calculadas del listado actual */
-export const selectWasteMetrics = (s) => {
-  const records = s.waste.items;
-  const totalRecords   = records.length;
-  const totalQty       = records.reduce((acc, r) => acc + Number(r.quantity    || 0), 0);
-  const totalLoss      = records.reduce((acc, r) => acc + Number(r.economicLoss || 0), 0);
-  const avgLoss        = totalRecords > 0 ? totalLoss / totalRecords : 0;
-
-  // Pérdida por motivo
-  const byReason = records.reduce((acc, r) => {
-    const key = r.reason || 'OTHER';
-    if (!acc[key]) acc[key] = { count: 0, qty: 0, loss: 0 };
-    acc[key].count += 1;
-    acc[key].qty   += Number(r.quantity || 0);
-    acc[key].loss  += Number(r.economicLoss || 0);
-    return acc;
-  }, {});
-
-  // Pérdida por producto (top 5)
-  const byProduct = Object.values(
-    records.reduce((acc, r) => {
-      const key = r.productId;
-      if (!acc[key]) acc[key] = { productId: key, productName: r.productName, count: 0, qty: 0, loss: 0 };
-      acc[key].count += 1;
-      acc[key].qty   += Number(r.quantity || 0);
-      acc[key].loss  += Number(r.economicLoss || 0);
-      return acc;
-    }, {})
-  )
-    .sort((a, b) => b.loss - a.loss)
-    .slice(0, 5);
-
-  return { totalRecords, totalQty, totalLoss, avgLoss, byReason, byProduct };
-};
 
 export default wasteSlice.reducer;

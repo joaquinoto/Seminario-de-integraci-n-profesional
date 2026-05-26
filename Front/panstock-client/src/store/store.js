@@ -45,14 +45,21 @@ const suppliersPersistConfig = {
   whitelist: ['items'],
 };
 
-// Expiration: only persist badge counts — list refreshes on page visit
+// Solo contadores del semáforo — la lista se refresca al visitar la página
 const expirationPersistConfig = {
   key: 'panstock-expiration',
   storage,
   whitelist: ['greenCount', 'yellowCount', 'redCount', 'expiredCount'],
 };
 
-// Stock and Waste: do NOT persist — always fetch fresh data
+// Waste: persistir solo los filtros activos y la lista de usuarios cargada.
+// Los registros de merma siempre se traen frescos del servidor.
+const wastePersistConfig = {
+  key: 'panstock-waste',
+  storage,
+  // activeFilters incluye el nuevo campo createdById
+  whitelist: ['activeFilters', 'users'],
+};
 
 // ─── Root Reducer ─────────────────────────────────────────────────────────────
 
@@ -62,8 +69,8 @@ const rootReducer = combineReducers({
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
   expiration: persistReducer(expirationPersistConfig, expirationReducer),
-  stock:      stockReducer,  // no persistence — always fresh
-  waste:      wasteReducer,  // no persistence — always fresh
+  stock:      stockReducer,
+  waste:      persistReducer(wastePersistConfig,      wasteReducer),
 });
 
 // ─── Store ────────────────────────────────────────────────────────────────────

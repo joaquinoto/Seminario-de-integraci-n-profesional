@@ -67,11 +67,8 @@ public class SecurityConfig {
                     // ── Stock: OWNER + EMPLOYEE ──────────────────────────────────────
                     .requestMatchers("/api/stock/**").authenticated()
 
-                    // ── Waste records ────────────────────────────────────────────────
-                    // GET (lectura): ambos roles pueden ver el historial de mermas
-                    .requestMatchers(HttpMethod.GET, "/api/waste-records/**").authenticated()
-                    // POST (registro de merma): SOLO OWNER puede registrar pérdidas
-                    .requestMatchers(HttpMethod.POST, "/api/waste-records/**").hasAuthority(Role.OWNER.name())
+                    // ── Waste records OWNER + EMPLOYEE ────────────────────────────────
+                   .requestMatchers("/api/waste-records/**").authenticated()
 
                     // ── Alerts: OWNER + EMPLOYEE ─────────────────────────────────────
                     .requestMatchers("/api/alerts/**").authenticated()

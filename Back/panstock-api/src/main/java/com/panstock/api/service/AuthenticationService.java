@@ -20,7 +20,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AuthenticationService {
 
-    // Solo @RequiredArgsConstructor, sin @Autowired adicionales sobre campos final
     private final UserJpaRepository userRepository;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
@@ -32,6 +31,7 @@ public class AuthenticationService {
             String jwtToken = jwtService.generateToken(user);
             return AuthenticationResponse.builder()
                     .accessToken(jwtToken)
+                    .userId(user.getId())           // ← incluir el id
                     .username(user.getUsername())
                     .email(user.getEmail())
                     .role(user.getRole())
@@ -53,11 +53,13 @@ public class AuthenticationService {
                             request.getPassword()));
 
             User user = userRepository.findByUsername(request.getUsername())
-                    .orElseThrow(() -> new UserException("El usuario " + request.getUsername() + " no existe."));
+                    .orElseThrow(() -> new UserException(
+                            "El usuario " + request.getUsername() + " no existe."));
 
             String jwtToken = jwtService.generateToken(user);
             return AuthenticationResponse.builder()
                     .accessToken(jwtToken)
+                    .userId(user.getId())           // ← incluir el id
                     .username(user.getUsername())
                     .email(user.getEmail())
                     .role(user.getRole())

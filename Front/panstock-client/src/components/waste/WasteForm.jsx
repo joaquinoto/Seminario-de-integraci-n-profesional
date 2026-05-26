@@ -16,25 +16,27 @@ import { Alert } from '../ui/FormField';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const WASTE_REASONS = [
-  { value: 'EXPIRED',              label: '💀 Vencido'              },
-  { value: 'DAMAGED',              label: '💥 Dañado / Roto'        },
-  { value: 'INTERNAL_CONSUMPTION', label: '🍽 Consumo interno'      },
-  { value: 'QUALITY_ISSUE',        label: '⚠️ Problema de calidad'  },
-  { value: 'OTHER',                label: '📝 Otro'                 },
+  { value: 'EXPIRED',              label: '💀 Vencido'             },
+  { value: 'DAMAGED',              label: '💥 Dañado / Roto'       },
+  { value: 'INTERNAL_CONSUMPTION', label: '🍽 Consumo interno'     },
+  { value: 'QUALITY_ISSUE',        label: '⚠️ Problema de calidad' },
+  { value: 'OTHER',                label: '📝 Otro'                },
 ];
 
-const EXPIRATION_COLORS = {
-  EXPIRED:        { color: '#C0392B', bg: 'rgba(192,57,43,0.10)',  icon: '💀' },
-  RED:            { color: '#E74C3C', bg: 'rgba(231,76,60,0.10)',  icon: '🔴' },
-  YELLOW:         { color: '#D68910', bg: 'rgba(214,137,16,0.10)', icon: '🟡' },
-  GREEN:          { color: '#1E8449', bg: 'rgba(30,132,73,0.10)',  icon: '🟢' },
-  NOT_APPLICABLE: { color: '#8C7B6B', bg: 'rgba(140,123,107,0.10)',icon: '⚪' },
+const EXPIRATION_CONFIG = {
+  EXPIRED:        { color: '#C0392B', icon: '💀' },
+  RED:            { color: '#E74C3C', icon: '🔴' },
+  YELLOW:         { color: '#D68910', icon: '🟡' },
+  GREEN:          { color: '#1E8449', icon: '🟢' },
+  NOT_APPLICABLE: { color: '#8C7B6B', icon: '⚪' },
 };
 
 const formatDate = (d) =>
-  d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  }) : '—';
+  d
+    ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR', {
+        day: '2-digit', month: 'short', year: 'numeric',
+      })
+    : '—';
 
 const formatARS = (v) =>
   v != null && Number(v) !== 0
@@ -49,19 +51,20 @@ function Field({ label, error, hint, children, required }) {
     <div className="wf-field">
       {label && (
         <label className="wf-label">
-          {label}{required && <span className="wf-req"> *</span>}
+          {label}
+          {required && <span className="wf-req"> *</span>}
         </label>
       )}
       {children}
-      {hint  && !error && <span className="wf-hint">{hint}</span>}
+      {hint && !error && <span className="wf-hint">{hint}</span>}
       {error && <span className="wf-error">{error}</span>}
     </div>
   );
 }
 
 // ─── Success screen ───────────────────────────────────────────────────────────
-function SuccessView({ record, onNew, onClose }) {
-  const loss = record?.economicLoss;
+function SuccessView({ record, registeredBy, onNew, onClose }) {
+  const loss    = record?.economicLoss;
   const lossStr = loss != null && Number(loss) > 0 ? formatARS(loss) : null;
 
   return (
@@ -69,17 +72,33 @@ function SuccessView({ record, onNew, onClose }) {
       <div className="wf-success-icon">🗑️</div>
       <h3 className="wf-success-title">¡Merma registrada!</h3>
       <p className="wf-success-desc">
-        Se registró la baja de <strong>{record?.quantity}</strong> unidades de{' '}
-        <strong>{record?.productName}</strong>.
+        Se registró la baja de{' '}
+        <strong>{Number(record?.quantity).toLocaleString('es-AR')}</strong>{' '}
+        unidades de <strong>{record?.productName}</strong>.
         {lossStr && (
-          <> Pérdida económica estimada: <strong style={{ color: '#C0392B' }}>{lossStr}</strong>.</>
+          <>
+            {' '}Pérdida económica estimada:{' '}
+            <strong style={{ color: '#C0392B' }}>{lossStr}</strong>.
+          </>
         )}
       </p>
+
+      {registeredBy && (
+        <div className="wf-success-author">
+          <span className="wf-success-avatar">
+            {registeredBy.charAt(0).toUpperCase()}
+          </span>
+          <span>Registrado por <strong>{registeredBy}</strong></span>
+        </div>
+      )}
+
       <span className="wf-success-badge">Registro #{record?.id}</span>
+
       <div className="wf-success-actions">
-        <button className="wf-btn-sec" onClick={onClose}>Volver al stock</button>
+        <button className="wf-btn-sec" onClick={onClose}>Volver</button>
         <button className="wf-btn-pri" onClick={onNew}>+ Otra merma</button>
       </div>
+
       <style>{`
         .wf-success {
           display: flex; flex-direction: column; align-items: center;
@@ -94,6 +113,18 @@ function SuccessView({ record, onNew, onClose }) {
         .wf-success-desc {
           font-size: 0.9rem; color: var(--warm-gray);
           line-height: 1.6; max-width: 340px;
+        }
+        .wf-success-author {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 0.82rem; color: var(--warm-gray);
+          padding: 8px 16px; border-radius: var(--radius-md);
+          background: var(--cream); border: 1px solid var(--cream-dark);
+        }
+        .wf-success-avatar {
+          width: 26px; height: 26px; border-radius: 50%;
+          background: var(--amber); color: white;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.78rem; font-weight: 700; flex-shrink: 0;
         }
         .wf-success-badge {
           display: inline-flex; align-items: center;
@@ -134,11 +165,13 @@ export default function WasteForm({ onSuccess, onCancel }) {
   const batchesSt = useSelector(selectBatchesStatus);
   const { status, error, lastCreated } = useSelector(selectWasteAction);
 
-  const [form, setForm]       = useState({ batchId: '', quantity: '', reason: 'EXPIRED', notes: '' });
-  const [fieldErrors, setFE]  = useState({});
+  const [form, setForm] = useState({
+    batchId: '', quantity: '', reason: 'EXPIRED', notes: '',
+  });
+  const [fieldErrors, setFE]          = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Load batches if needed
+  // Cargar lotes si no están disponibles
   useEffect(() => {
     if (batches.length === 0 || batchesSt === 'idle') {
       dispatch(fetchBatches({ token }));
@@ -150,11 +183,12 @@ export default function WasteForm({ onSuccess, onCancel }) {
     if (status === 'succeeded') setShowSuccess(true);
   }, [status]);
 
-  // Only AVAILABLE batches with stock > 0
+  // Solo lotes AVAILABLE con stock > 0
   const availableBatches = useMemo(
-    () => batches.filter(
-      (b) => b.batchStatus === 'AVAILABLE' && Number(b.currentQuantity) > 0
-    ),
+    () =>
+      batches.filter(
+        (b) => b.batchStatus === 'AVAILABLE' && Number(b.currentQuantity) > 0
+      ),
     [batches]
   );
 
@@ -163,7 +197,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
     [availableBatches, form.batchId]
   );
 
-  // Estimated economic loss preview
+  // Preview de pérdida económica
   const estimatedLoss = useMemo(() => {
     if (!selectedBatch || !form.quantity) return null;
     const price = selectedBatch.unitSalePrice;
@@ -173,7 +207,16 @@ export default function WasteForm({ onSuccess, onCancel }) {
     return qty * Number(price);
   }, [selectedBatch, form.quantity]);
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  // Nombre completo del usuario autenticado
+  const fullName = useMemo(() => {
+    if (!user) return null;
+    const first = user.firstName || '';
+    const last  = user.lastName  || '';
+    if (first && last) return `${first} ${last}`;
+    return first || last || user.username || null;
+  }, [user]);
+
+  // ── Validación ────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
     if (!form.batchId) e.batchId = 'Seleccioná un lote';
@@ -196,16 +239,24 @@ export default function WasteForm({ onSuccess, onCancel }) {
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
 
-    dispatch(createWasteRecord({
-      token,
-      data: {
-        batchId:  Number(form.batchId),
-        userId:   user?.id ?? null,
-        quantity: Number(form.quantity),
-        reason:   form.reason,
-        notes:    form.notes.trim() || null,
-      },
-    }));
+    // Validación crítica: necesitamos el id del usuario autenticado
+    if (!user?.id) {
+      setFE({ _global: 'No se pudo identificar al usuario. Por favor, cerrá sesión y volvé a ingresar.' });
+      return;
+    }
+
+    dispatch(
+      createWasteRecord({
+        token,
+        data: {
+          batchId:  Number(form.batchId),
+          userId:   user.id,        // SIEMPRE enviamos el usuario autenticado
+          quantity: Number(form.quantity),
+          reason:   form.reason,
+          notes:    form.notes.trim() || null,
+        },
+      })
+    );
   };
 
   const handleNew = () => {
@@ -222,27 +273,66 @@ export default function WasteForm({ onSuccess, onCancel }) {
 
   const isLoading = status === 'loading';
 
+  // ── Success screen ─────────────────────────────────────────────────────────
   if (showSuccess) {
-    return <SuccessView record={lastCreated} onNew={handleNew} onClose={handleClose} />;
+    return (
+      <SuccessView
+        record={lastCreated}
+        registeredBy={fullName}
+        onNew={handleNew}
+        onClose={handleClose}
+      />
+    );
   }
 
   return (
     <form onSubmit={handleSubmit} noValidate className="wf-form">
-      {error && <Alert type="error">{error}</Alert>}
+      {/* Error global (ej: usuario no identificado) */}
+      {(error || fieldErrors._global) && (
+        <Alert type="error">{error || fieldErrors._global}</Alert>
+      )}
 
-      {/* Info banner */}
+      {/* Quién está registrando — siempre visible y destacado */}
+      {fullName ? (
+        <div className="wf-author-banner">
+          <div className="wf-author-avatar">
+            {fullName.charAt(0).toUpperCase()}
+          </div>
+          <div className="wf-author-info">
+            <span className="wf-author-label">Registrando como</span>
+            <span className="wf-author-name">
+              {fullName}
+              <span className="wf-author-role">
+                {user?.role === 'OWNER' ? ' · 👑 Dueño/a' : ' · 👤 Empleado/a'}
+              </span>
+            </span>
+          </div>
+          <div className="wf-author-id">ID #{user?.id}</div>
+        </div>
+      ) : (
+        <div className="wf-author-error">
+          ⚠️ No se pudo identificar al usuario. Cerrá sesión y volvé a ingresar.
+        </div>
+      )}
+
+      {/* Banner informativo */}
       <div className="wf-info-banner">
         <span>⚠️</span>
         <p>
-          Registrá los productos <strong>descartados, vencidos o dañados</strong> para
-          mantener el inventario actualizado. El stock del lote se descuenta automáticamente.
+          Registrá los productos{' '}
+          <strong>descartados, vencidos o dañados</strong> para mantener el
+          inventario actualizado. El stock del lote se descuenta automáticamente.
         </p>
       </div>
 
-      {/* ── Batch selector ── */}
+      {/* ── Selector de lote ── */}
       <Field label="Lote a descartar" required error={fieldErrors.batchId}>
         {batchesSt === 'loading' ? (
-          <div className="wf-loading-sel">Cargando lotes...</div>
+          <div className="wf-loading-sel">Cargando lotes disponibles...</div>
+        ) : availableBatches.length === 0 ? (
+          <div className="wf-loading-sel" style={{ color: 'var(--warm-gray)' }}>
+            No hay lotes disponibles con stock.
+          </div>
         ) : (
           <select
             className={`wf-select ${fieldErrors.batchId ? 'err' : ''}`}
@@ -252,8 +342,12 @@ export default function WasteForm({ onSuccess, onCancel }) {
           >
             <option value="">— Seleccioná un lote —</option>
             {availableBatches.map((b) => {
-              const exp = b.expirationDate ? ` · Vence: ${formatDate(b.expirationDate)}` : '';
-              const cfg = EXPIRATION_COLORS[b.expirationStatus] || EXPIRATION_COLORS.NOT_APPLICABLE;
+              const exp = b.expirationDate
+                ? ` · Vence: ${formatDate(b.expirationDate)}`
+                : '';
+              const cfg =
+                EXPIRATION_CONFIG[b.expirationStatus] ||
+                EXPIRATION_CONFIG.NOT_APPLICABLE;
               return (
                 <option key={b.id} value={b.id}>
                   {cfg.icon} {b.productName} · Stock: {b.currentQuantity}{exp}
@@ -264,7 +358,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
         )}
       </Field>
 
-      {/* Selected batch info card */}
+      {/* Info del lote seleccionado */}
       {selectedBatch && (
         <div className="wf-batch-card">
           <div className="wf-bc-row">
@@ -273,16 +367,21 @@ export default function WasteForm({ onSuccess, onCancel }) {
           </div>
           <div className="wf-bc-row">
             <span className="wf-bc-label">Stock disponible</span>
-            <span className="wf-bc-val wf-bc-stock">{selectedBatch.currentQuantity} u.</span>
+            <span className="wf-bc-val wf-bc-stock">
+              {selectedBatch.currentQuantity} u.
+            </span>
           </div>
           {selectedBatch.expirationDate && (
             <div className="wf-bc-row">
               <span className="wf-bc-label">Vencimiento</span>
               <span
                 className="wf-bc-val"
-                style={{ color: EXPIRATION_COLORS[selectedBatch.expirationStatus]?.color }}
+                style={{
+                  color:
+                    EXPIRATION_CONFIG[selectedBatch.expirationStatus]?.color,
+                }}
               >
-                {EXPIRATION_COLORS[selectedBatch.expirationStatus]?.icon}{' '}
+                {EXPIRATION_CONFIG[selectedBatch.expirationStatus]?.icon}{' '}
                 {formatDate(selectedBatch.expirationDate)}
               </span>
             </div>
@@ -293,16 +392,19 @@ export default function WasteForm({ onSuccess, onCancel }) {
               <span className="wf-bc-val">{selectedBatch.supplierName}</span>
             </div>
           )}
-          {selectedBatch.unitSalePrice && Number(selectedBatch.unitSalePrice) > 0 && (
-            <div className="wf-bc-row">
-              <span className="wf-bc-label">Precio venta unitario</span>
-              <span className="wf-bc-val">{formatARS(selectedBatch.unitSalePrice)}</span>
-            </div>
-          )}
+          {selectedBatch.unitSalePrice &&
+            Number(selectedBatch.unitSalePrice) > 0 && (
+              <div className="wf-bc-row">
+                <span className="wf-bc-label">Precio venta unit.</span>
+                <span className="wf-bc-val">
+                  {formatARS(selectedBatch.unitSalePrice)}
+                </span>
+              </div>
+            )}
         </div>
       )}
 
-      {/* ── Reason ── */}
+      {/* ── Motivo ── */}
       <Field label="Motivo de la merma" required error={fieldErrors.reason}>
         <div className="wf-reason-grid">
           {WASTE_REASONS.map((r) => (
@@ -325,9 +427,17 @@ export default function WasteForm({ onSuccess, onCancel }) {
         </div>
       </Field>
 
-      {/* ── Quantity ── */}
-      <Field label="Cantidad a descartar" required error={fieldErrors.quantity}
-        hint={selectedBatch ? `Máximo: ${selectedBatch.currentQuantity} u.` : undefined}>
+      {/* ── Cantidad ── */}
+      <Field
+        label="Cantidad a descartar"
+        required
+        error={fieldErrors.quantity}
+        hint={
+          selectedBatch
+            ? `Máximo: ${selectedBatch.currentQuantity} u.`
+            : undefined
+        }
+      >
         <input
           className={`wf-input ${fieldErrors.quantity ? 'err' : ''}`}
           type="number"
@@ -340,7 +450,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
         />
       </Field>
 
-      {/* Economic loss preview */}
+      {/* Preview de pérdida económica */}
       {estimatedLoss != null && (
         <div className="wf-loss-preview">
           <span className="wf-loss-label">Pérdida económica estimada</span>
@@ -348,7 +458,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
         </div>
       )}
 
-      {/* ── Notes ── */}
+      {/* ── Observaciones ── */}
       <Field label="Observaciones">
         <textarea
           className="wf-textarea"
@@ -360,37 +470,73 @@ export default function WasteForm({ onSuccess, onCancel }) {
         />
       </Field>
 
-      {/* ── Actions ── */}
+      {/* ── Acciones ── */}
       <div className="wf-actions">
         {onCancel && (
-          <button type="button" className="wf-cancel" onClick={onCancel} disabled={isLoading}>
+          <button
+            type="button"
+            className="wf-cancel"
+            onClick={onCancel}
+            disabled={isLoading}
+          >
             Cancelar
           </button>
         )}
         <button
           type="submit"
           className="wf-submit"
-          disabled={isLoading || !form.batchId}
+          disabled={isLoading || !form.batchId || !user?.id}
         >
-          {isLoading
-            ? <><span className="wf-spinner" /> Registrando...</>
-            : '🗑️ Registrar merma'}
+          {isLoading ? (
+            <>
+              <span className="wf-spinner" /> Registrando...
+            </>
+          ) : (
+            '🗑️ Registrar merma'
+          )}
         </button>
       </div>
 
       <style>{`
         .wf-form { display: flex; flex-direction: column; gap: 16px; }
 
+        /* Quién registra */
+        .wf-author-banner {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 14px; border-radius: var(--radius-md);
+          background: rgba(200,137,58,0.06);
+          border: 1px solid rgba(200,137,58,0.2);
+        }
+        .wf-author-avatar {
+          width: 34px; height: 34px; border-radius: 50%;
+          background: var(--amber); color: white;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.9rem; font-weight: 700; flex-shrink: 0;
+        }
+        .wf-author-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+        .wf-author-label {
+          font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em;
+          color: var(--warm-gray-light); font-weight: 600;
+        }
+        .wf-author-name  { font-size: 0.88rem; font-weight: 700; color: var(--espresso); }
+        .wf-author-role  { font-weight: 400; color: var(--warm-gray); }
+        .wf-author-id    { font-size: 0.7rem; color: var(--warm-gray-light); flex-shrink: 0; }
+
+        .wf-author-error {
+          padding: 10px 14px; border-radius: var(--radius-md);
+          background: var(--error-light); border: 1px solid var(--error);
+          color: var(--error); font-size: 0.82rem; font-weight: 500;
+        }
+
         /* Info banner */
         .wf-info-banner {
           display: flex; gap: 10px; align-items: flex-start;
-          padding: 12px 14px; border-radius: var(--radius-md);
-          background: rgba(192,57,43,0.06);
+          padding: 11px 14px; border-radius: var(--radius-md);
+          background: rgba(192,57,43,0.05);
           border: 1px solid rgba(192,57,43,0.2);
         }
         .wf-info-banner p {
-          font-size: 0.8rem; color: var(--warm-gray);
-          line-height: 1.5; margin: 0;
+          font-size: 0.8rem; color: var(--warm-gray); line-height: 1.5; margin: 0;
         }
 
         /* Field */
@@ -416,14 +562,13 @@ export default function WasteForm({ onSuccess, onCancel }) {
         .wf-select  { cursor: pointer; }
         .wf-textarea { resize: vertical; }
         .wf-select:focus, .wf-input:focus, .wf-textarea:focus {
-          border-color: var(--error); background: #fff;
-          box-shadow: 0 0 0 3px rgba(192,57,43,0.10);
+          border-color: #C0392B; background: #fff;
+          box-shadow: 0 0 0 3px rgba(192,57,43,0.09);
         }
         .wf-select.err, .wf-input.err { border-color: var(--error); }
         .wf-select:disabled, .wf-input:disabled, .wf-textarea:disabled {
           opacity: 0.55; cursor: not-allowed;
         }
-
         .wf-loading-sel {
           padding: 12px 14px; border: 1.5px solid var(--cream-dark);
           border-radius: var(--radius-md); background: var(--cream);
@@ -439,36 +584,35 @@ export default function WasteForm({ onSuccess, onCancel }) {
         }
         .wf-bc-row   { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .wf-bc-label {
-          font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-          letter-spacing: 0.06em; color: var(--warm-gray-light);
+          font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.06em; color: var(--warm-gray-light); flex-shrink: 0;
         }
-        .wf-bc-val   { font-size: 0.85rem; color: var(--espresso); font-weight: 600; }
+        .wf-bc-val   { font-size: 0.85rem; color: var(--espresso); font-weight: 600; text-align: right; }
         .wf-bc-stock { color: var(--success, #2E7D32); }
 
-        /* Reason radio grid */
+        /* Motivo */
         .wf-reason-grid {
-          display: grid; grid-template-columns: 1fr 1fr;
-          gap: 7px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
         }
         .wf-reason-opt {
           display: flex; align-items: center; gap: 8px;
           padding: 10px 12px; border-radius: var(--radius-md);
           border: 1.5px solid var(--cream-dark); background: var(--cream);
-          cursor: pointer; transition: all var(--transition-fast);
-          user-select: none;
+          cursor: pointer; transition: all var(--transition-fast); user-select: none;
         }
-        .wf-reason-opt:hover { border-color: rgba(192,57,43,0.4); }
+        .wf-reason-opt:hover   { border-color: rgba(192,57,43,0.35); }
         .wf-reason-opt.selected {
           border-color: #C0392B; background: rgba(192,57,43,0.05);
         }
-        .wf-radio { display: none; }
+        .wf-radio        { display: none; }
         .wf-reason-label { font-size: 0.84rem; font-weight: 500; color: var(--espresso); }
 
         /* Loss preview */
         .wf-loss-preview {
           display: flex; align-items: center; justify-content: space-between;
           padding: 10px 14px; border-radius: var(--radius-md);
-          background: rgba(192,57,43,0.06); border: 1px solid rgba(192,57,43,0.2);
+          background: rgba(192,57,43,0.05);
+          border: 1px solid rgba(192,57,43,0.2);
           animation: fadeIn 0.2s ease;
         }
         .wf-loss-label { font-size: 0.78rem; color: var(--warm-gray); font-weight: 500; }
@@ -487,10 +631,11 @@ export default function WasteForm({ onSuccess, onCancel }) {
         }
         .wf-cancel:hover    { border-color: var(--warm-gray); color: var(--espresso); }
         .wf-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+
         .wf-submit {
           flex: 1; min-width: 180px;
-          padding: 13px 24px; background: #C0392B;
-          border: none; border-radius: var(--radius-md);
+          padding: 13px 24px; background: #C0392B; border: none;
+          border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.9rem; font-weight: 600;
           color: white; cursor: pointer;
           transition: all var(--transition-fast);
@@ -505,14 +650,15 @@ export default function WasteForm({ onSuccess, onCancel }) {
         .wf-spinner {
           width: 17px; height: 17px;
           border: 2px solid white; border-top-color: transparent;
-          border-radius: 50%; animation: spin 0.7s linear infinite;
-          flex-shrink: 0;
+          border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
         }
 
         @media (max-width: 480px) {
           .wf-reason-grid   { grid-template-columns: 1fr; }
           .wf-actions       { flex-direction: column-reverse; }
-          .wf-cancel, .wf-submit { width: 100%; min-width: unset; justify-content: center; }
+          .wf-cancel, .wf-submit {
+            width: 100%; min-width: unset; justify-content: center;
+          }
         }
       `}</style>
     </form>

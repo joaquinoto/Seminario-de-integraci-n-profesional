@@ -28,11 +28,16 @@ public class WasteRecordRepositoryImpl implements WasteRecordRepository {
 
     @Override
     public List<WasteRecord> findAll() {
-        return wasteRecordJpaRepository.findAll();
+        return wasteRecordJpaRepository.findAllByOrderByWasteDateDesc();
     }
 
     @Override
     public List<WasteRecord> findByWasteDateBetween(LocalDateTime from, LocalDateTime to) {
-        return wasteRecordJpaRepository.findByWasteDateBetweenOrderByWasteDateAsc(from, to);
+        return wasteRecordJpaRepository.findByWasteDateBetweenOrderByWasteDateDesc(from, to);
+    }
+
+    @Override
+    public List<WasteRecord> search(LocalDateTime from, LocalDateTime to, Long createdById) {
+        return wasteRecordJpaRepository.search(from, to, createdById);
     }
 }

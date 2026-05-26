@@ -3,112 +3,92 @@ import { useNavigate, NavLink } from 'react-router-dom';
 import { logout, selectUser } from '../../features/auth/authSlice';
 import { selectSemaphoreCounts } from '../../features/stock/expirationSlice';
 
-const isOwner = (user) => user?.role === 'OWNER';
-
 export default function AppTopbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user     = useSelector(selectUser);
   const counts   = useSelector(selectSemaphoreCounts);
 
-  const owner = isOwner(user);
-  const urgentCount = counts.expired + counts.red + counts.yellow;
+  const urgentCount = (counts.expired ?? 0) + (counts.red ?? 0) + (counts.yellow ?? 0);
 
   const handleLogout = () => {
     dispatch(logout());
     navigate('/login', { replace: true });
   };
 
-  // Ítems disponibles para AMBOS roles
-  const COMMON_ITEMS = [
-    { to: '/dashboard',  label: 'Inicio',       icon: '🏠', badge: null },
-    { to: '/stock',      label: 'Stock',         icon: '📦', badge: null },
+  const NAV_ITEMS = [
+    { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
+    { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
+    { to: '/waste',      label: 'Mermas',       icon: '🗑️', badge: null },
     {
-      to: '/expiration',
-      label: 'Vencimientos',
-      icon: '⏰',
-      badge: urgentCount > 0 ? urgentCount : null,
+      to: '/expiration', label: 'Vencimientos', icon: '⏰',
+      badge:      urgentCount > 0 ? urgentCount : null,
       badgeColor: counts.expired > 0 ? '#C0392B' : counts.red > 0 ? '#E74C3C' : '#E67E22',
-    },
-  ];
-
-  // Ítems solo para OWNER
-  const OWNER_ITEMS = [
-    {
-      to: '/waste',
-      label: 'Mermas',
-      icon: '🗑️',
-      badge: null,
-      ownerBadge: true, // muestra indicador "solo dueño"
     },
     { to: '/products',   label: 'Productos',    icon: '🥐', badge: null },
     { to: '/categories', label: 'Categorías',   icon: '🗂',  badge: null },
     { to: '/suppliers',  label: 'Proveedores',  icon: '🚚', badge: null },
   ];
 
-  // Ítems para EMPLOYEE (acceso de lectura a mermas, sin catálogo)
-  const EMPLOYEE_ITEMS = [
-    { to: '/waste',    label: 'Mermas',    icon: '🗑️', badge: null, readonly: true },
-    { to: '/products', label: 'Productos', icon: '🥐', badge: null },
-  ];
-
-  const NAV_ITEMS = [
-    ...COMMON_ITEMS,
-    ...(owner ? OWNER_ITEMS : EMPLOYEE_ITEMS),
-  ];
-
   return (
     <header className="topbar">
       <div className="topbar-inner">
+        {/* Brand */}
         <NavLink to="/dashboard" className="topbar-brand">
-          <img src="/logo_panstock.png" alt="Logo" width="32" height="32" />
+          <img src="/logo_panstock.png" alt="PanStock" width="30" height="30" />
           <span className="topbar-brand-name">PanStock</span>
         </NavLink>
 
-        <nav className="topbar-nav">
+        {/* Navigation */}
+        <nav className="topbar-nav" aria-label="Navegación principal">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `topbar-link ${isActive ? 'active' : ''}`}
-              title={item.readonly ? 'Solo lectura' : item.label}
+              className={({ isActive }) => `topbar-link${isActive ? ' active' : ''}`}
             >
-              <span className="topbar-link-icon">{item.icon}</span>
+              <span className="topbar-link-icon" aria-hidden="true">{item.icon}</span>
               <span className="topbar-link-label">{item.label}</span>
               {item.badge != null && (
-                <span className="topbar-badge" style={{ background: item.badgeColor }}>
+                <span
+                  className="topbar-badge"
+                  style={{ background: item.badgeColor }}
+                  aria-label={`${item.badge} alertas`}
+                >
                   {item.badge > 99 ? '99+' : item.badge}
                 </span>
-              )}
-              {item.ownerBadge && owner && (
-                <span className="topbar-owner-dot" title="Solo dueño/encargado" />
-              )}
-              {item.readonly && (
-                <span className="topbar-readonly-dot" title="Solo lectura" />
               )}
             </NavLink>
           ))}
         </nav>
 
+        {/* User + logout */}
         <div className="topbar-user">
           {user && (
             <div className="topbar-user-info">
-              <span
-                className={`topbar-avatar ${owner ? 'avatar-owner' : 'avatar-employee'}`}
-                title={owner ? 'Dueño / Encargado' : 'Empleado/a'}
-              >
+              <span className="topbar-avatar" title={`${user.firstName} ${user.lastName}`}>
                 {user.firstName?.[0]?.toUpperCase() || '?'}
               </span>
               <span className="topbar-username hide-mobile">
-                {user.firstName}&nbsp;·&nbsp;
-                <span className="topbar-role">{owner ? '👑' : '👤'}</span>
+                {user.firstName}&nbsp;
+                <span className="topbar-role">
+                  {user.role === 'OWNER' ? '👑' : '👤'}
+                </span>
               </span>
             </div>
           )}
-          <button className="topbar-logout" onClick={handleLogout} title="Cerrar sesión">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+
+          <button
+            className="topbar-logout"
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3"
+                stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M10 11l3-3-3-3M13 8H6"
+                stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             <span className="hide-mobile">Salir</span>
           </button>
@@ -116,9 +96,10 @@ export default function AppTopbar() {
       </div>
 
       <style>{`
+        /* ── Topbar shell ── */
         .topbar {
           position: sticky; top: 0; z-index: 200;
-          background: rgba(247,243,238,0.95);
+          background: rgba(247,243,238,0.96);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid var(--cream-dark);
         }
@@ -126,79 +107,80 @@ export default function AppTopbar() {
           max-width: 1200px; margin: 0 auto;
           padding: 0 var(--space-lg);
           display: flex; align-items: center; gap: var(--space-md);
-          height: 56px;
+          height: 54px;
         }
+
+        /* Brand */
         .topbar-brand {
-          display: flex; align-items: center; gap: 8px;
+          display: flex; align-items: center; gap: 7px;
           text-decoration: none; flex-shrink: 0;
         }
         .topbar-brand-name {
-          font-family: var(--font-display); font-size: 1.1rem; font-weight: 700;
+          font-family: var(--font-display); font-size: 1.05rem; font-weight: 700;
           color: var(--espresso); letter-spacing: -0.01em;
         }
+
+        /* Nav */
         .topbar-nav {
-          display: flex; align-items: center; gap: 2px; flex: 1;
-          overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
+          display: flex; align-items: center; gap: 1px;
+          flex: 1; overflow-x: auto;
+          scrollbar-width: none; -ms-overflow-style: none;
         }
         .topbar-nav::-webkit-scrollbar { display: none; }
+
         .topbar-link {
           position: relative; display: flex; align-items: center; gap: 5px;
-          padding: 6px 10px; border-radius: var(--radius-md);
-          text-decoration: none; font-size: 0.84rem; font-weight: 500;
-          color: var(--warm-gray);
+          padding: 6px 9px; border-radius: var(--radius-md);
+          text-decoration: none; font-size: 0.83rem; font-weight: 500;
+          color: var(--warm-gray); white-space: nowrap; flex-shrink: 0;
           transition: background var(--transition-fast), color var(--transition-fast);
-          white-space: nowrap; flex-shrink: 0;
         }
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
-        .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
-        .topbar-link-icon   { font-size: 0.95rem; }
+        .topbar-link.active {
+          background: var(--espresso); color: var(--cream); font-weight: 600;
+        }
+        .topbar-link-icon  { font-size: 0.92rem; line-height: 1; }
+        .topbar-link-label { line-height: 1; }
 
+        /* Badge (vencimientos) */
         .topbar-badge {
           display: inline-flex; align-items: center; justify-content: center;
-          min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-          font-size: 0.65rem; font-weight: 700; color: white; line-height: 1;
+          min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+          font-size: 0.62rem; font-weight: 700; color: white; line-height: 1;
           animation: pulse-badge 2s ease infinite;
         }
-        @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:0.7} }
+        @keyframes pulse-badge { 0%,100%{ opacity:1 } 50%{ opacity:0.65 } }
 
-        /* Dot de "solo owner" (rojo pequeño en la esquina) */
-        .topbar-owner-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: #C0392B; flex-shrink: 0;
-          animation: pulse-badge 3s ease infinite;
-        }
-        /* Dot de "solo lectura" (gris) */
-        .topbar-readonly-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: var(--warm-gray-light); flex-shrink: 0;
-        }
-
+        /* User block */
         .topbar-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .topbar-user-info { display: flex; align-items: center; gap: 8px; }
+        .topbar-user-info { display: flex; align-items: center; gap: 7px; }
         .topbar-avatar {
-          width: 30px; height: 30px; border-radius: 50%;
+          width: 28px; height: 28px; border-radius: 50%;
+          background: var(--amber); color: white;
           display: flex; align-items: center; justify-content: center;
-          font-family: var(--font-display); font-size: 0.85rem; font-weight: 700;
-          flex-shrink: 0; color: white;
+          font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
+          flex-shrink: 0; cursor: default;
         }
-        .avatar-owner    { background: var(--amber); }
-        .avatar-employee { background: #2E7D32; }
+        .topbar-username { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
+        .topbar-role { font-size: 0.85rem; }
 
-        .topbar-username { font-size: 0.82rem; color: var(--warm-gray); font-weight: 500; }
         .topbar-logout {
-          display: flex; align-items: center; gap: 5px; padding: 7px 12px;
+          display: flex; align-items: center; gap: 5px;
+          padding: 6px 11px;
           background: none; border: 1.5px solid var(--cream-dark);
           border-radius: var(--radius-md); font-family: var(--font-body);
-          font-size: 0.82rem; color: var(--warm-gray); cursor: pointer;
+          font-size: 0.8rem; color: var(--warm-gray); cursor: pointer;
           transition: all var(--transition-fast); flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
 
+        /* Responsive — tablet/mobile */
         @media (max-width: 780px) {
-          .hide-mobile { display: none; }
-          .topbar-link-label { display: none; }
-          .topbar-link { padding: 8px; }
-          .topbar-inner { gap: var(--space-sm); padding: 0 var(--space-sm); }
+          .hide-mobile         { display: none !important; }
+          .topbar-link-label   { display: none; }
+          .topbar-link         { padding: 7px 8px; }
+          .topbar-inner        { gap: var(--space-sm); padding: 0 var(--space-sm); }
+          .topbar-brand-name   { display: none; }
         }
       `}</style>
     </header>

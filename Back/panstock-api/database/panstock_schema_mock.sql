@@ -445,8 +445,8 @@ FROM inventory_batches;
 -- ALERTAS iniciales (semáforo para testing)
 -- =========================================================
 INSERT INTO alerts (id, alert_type, product_id, batch_id, message, severity, status, created_at, resolved_at) VALUES
-(1, 'EXPIRING_SOON', 504, 21,   'Leche vence mañana.',                                                                      'RED',    'ACTIVE', NOW(), NULL),
-(2, 'EXPIRING_SOON', 504, 15,   'Leche vence dentro de 7 días.',                                                             'YELLOW', 'ACTIVE', NOW(), NULL);
+(1, 'EXPIRING_SOON', 504, 21,   'Leche vence mañana.', 'RED', 'ACTIVE', NOW(), NULL),
+(2, 'EXPIRING_SOON', 504, 15,   'Leche vence dentro de 7 días.', 'YELLOW', 'ACTIVE', NOW(), NULL);
 
 -- =========================================================
 -- VERIFICACIÓN RÁPIDA (descomentar para validar)
@@ -464,3 +464,104 @@ INSERT INTO alerts (id, alert_type, product_id, batch_id, message, severity, sta
 -- ORDER BY b.expiration_date IS NULL, b.expiration_date ASC;
 
 -- SELECT status, COUNT(*) FROM alerts GROUP BY status;
+
+-- =========================================================
+-- REGISTROS DE MERMA (waste_records)
+-- WASTE RECORDS mock con created_by_id poblado
+-- =========================================================
+
+-- Usuarios disponibles:
+--   1 = lorena  (OWNER)
+--   2 = gabriel (OWNER)
+--   3 = martina (EMPLOYEE)
+--
+-- Lotes disponibles con stock > 0 (batch_status = AVAILABLE):
+--   15  → leche (product_id=504, unit_sale_price=0)
+--   21  → leche próxima a vencer (product_id=504)
+--   9   → alfajor sin TACC (product_id=301, unit_sale_price=2800)
+--   10  → alfajor 70 (product_id=401, unit_sale_price=1800)
+--   11  → cubanito (product_id=402, unit_sale_price=1500)
+--   12  → cindor (product_id=209, unit_sale_price=3000)
+--   13  → granos de café (product_id=501)
+-- -------------------------------------------------------
+
+INSERT INTO waste_records
+    (product_id, batch_id, created_by_id, quantity, reason,
+     waste_date, unit_cost, unit_sale_price, economic_loss, notes, created_at)
+VALUES
+-- Lorena descarta 2 alfajores sin TACC vencidos
+(301, 9, 1, 2.000, 'EXPIRED',
+ DATE_SUB(NOW(), INTERVAL 5 DAY),
+ NULL, 2800.00, 5600.00,
+ 'Dos alfajores sin TACC encontrados vencidos en mostrador.', NOW()),
+ 
+-- Gabriel descarta 3 alfajores 70 dañados
+(401, 10, 2, 3.000, 'DAMAGED',
+ DATE_SUB(NOW(), INTERVAL 4 DAY),
+ NULL, 1800.00, 5400.00,
+ 'Packaging roto, producto no apto para venta.', NOW()),
+ 
+-- Martina descarta 1 cindor por calidad
+(209, 12, 3, 1.000, 'QUALITY_ISSUE',
+ DATE_SUB(NOW(), INTERVAL 3 DAY),
+ NULL, 3000.00, 3000.00,
+ 'Caja abollada, producto en mal estado.', NOW()),
+ 
+-- Lorena: consumo interno de 2 cubanitos
+(402, 11, 1, 2.000, 'INTERNAL_CONSUMPTION',
+ DATE_SUB(NOW(), INTERVAL 2 DAY),
+ NULL, 1500.00, 3000.00,
+ 'Consumo interno del turno mañana.', NOW()),
+ 
+-- Martina: descarta 5 litros de leche vencida
+(504, 21, 3, 5.000, 'EXPIRED',
+ DATE_SUB(NOW(), INTERVAL 1 DAY),
+ NULL, 0.00, 0.00,
+ 'Leche del lote 21 vencida. Se descarta por completo.', NOW()),
+ 
+-- Gabriel: 1 alfajor sin TACC por otro motivo
+(301, 9, 2, 1.000, 'OTHER',
+ NOW(),
+ NULL, 2800.00, 2800.00,
+ 'Producto caído al suelo, no se puede vender.', NOW());
+ 
+-- Actualizar current_quantity de los lotes afectados para reflejar las mermas
+-- Lote 9  (alfajor sin TACC): 20 - 2 - 1 = 17
+-- Lote 10 (alfajor 70):       20 - 3     = 17
+-- Lote 11 (cubanito):         20 - 2     = 18
+-- Lote 12 (cindor):           10 - 1     =  9
+-- Lote 21 (leche prox):        3 - 3     =  0  → DEPLETED
+ 
+UPDATE inventory_batches SET current_quantity = 17.000 WHERE id = 9;
+UPDATE inventory_batches SET current_quantity = 17.000 WHERE id = 10;
+UPDATE inventory_batches SET current_quantity = 18.000 WHERE id = 11;
+UPDATE inventory_batches SET current_quantity =  9.000 WHERE id = 12;
+UPDATE inventory_batches SET current_quantity =  0.000, batch_status = 'DEPLETED' WHERE id = 21;
+ 
+-- Registrar los movimientos WASTE correspondientes en stock_movements
+INSERT INTO stock_movements
+    (product_id, batch_id, user_id, movement_type, quantity,
+     movement_date, notes, related_waste_record_id, created_at)
+SELECT
+    w.product_id,
+    w.batch_id,
+    w.created_by_id,
+    'WASTE',
+    w.quantity,
+    w.waste_date,
+    CONCAT('Descuento por merma. Motivo: ', w.reason),
+    w.id,
+    w.created_at
+FROM waste_records w
+WHERE w.created_at >= DATE_SUB(NOW(), INTERVAL 6 DAY);
+-- =========================================================
+-- VERIFICACIÓN (descomentar para validar)
+-- =========================================================
+
+-- SELECT wr.id, p.name AS producto, wr.quantity, wr.reason,
+--        wr.economic_loss, u.first_name, u.last_name, wr.waste_date
+-- FROM waste_records wr
+-- JOIN products p ON p.id = wr.product_id
+-- LEFT JOIN users u ON u.id = wr.created_by_id
+-- ORDER BY wr.waste_date DESC;
+

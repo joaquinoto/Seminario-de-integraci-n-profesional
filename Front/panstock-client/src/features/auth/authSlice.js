@@ -41,19 +41,27 @@ export const fetchProfile = createAsyncThunk(
   }
 );
 
+// ─── Helper: extrae el objeto user de la respuesta del backend ───────────────
+// La respuesta de /auth/authenticate y /auth/register devuelve:
+//   { access_token, user_id, username, email, role, firstName, lastName }
+// Mapeamos user_id → id para que el store sea consistente.
+const extractUser = (payload) => ({
+  id:        payload.user_id   ?? payload.userId ?? null,
+  username:  payload.username,
+  email:     payload.email,
+  role:      payload.role,
+  firstName: payload.firstName,
+  lastName:  payload.lastName,
+});
+
 // ─── Initial State ───────────────────────────────────────────────────────────
 
 const initialState = {
-  // Auth data
   token: null,
-  user: null,          // { username, email, role, firstName, lastName }
+  user: null,          // { id, username, email, role, firstName, lastName }
   isAuthenticated: false,
-
-  // UI state
   status: 'idle',      // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
-  
-  // Form mode
   lastAction: null,    // 'login' | 'register'
 };
 
@@ -91,13 +99,7 @@ const authSlice = createSlice({
         state.status = 'succeeded';
         state.isAuthenticated = true;
         state.token = action.payload.access_token;
-        state.user = {
-          username: action.payload.username,
-          email: action.payload.email,
-          role: action.payload.role,
-          firstName: action.payload.firstName,
-          lastName: action.payload.lastName,
-        };
+        state.user = extractUser(action.payload);
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.status = 'failed';
@@ -116,13 +118,7 @@ const authSlice = createSlice({
         state.status = 'succeeded';
         state.isAuthenticated = true;
         state.token = action.payload.access_token;
-        state.user = {
-          username: action.payload.username,
-          email: action.payload.email,
-          role: action.payload.role,
-          firstName: action.payload.firstName,
-          lastName: action.payload.lastName,
-        };
+        state.user = extractUser(action.payload);
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.status = 'failed';
@@ -131,18 +127,29 @@ const authSlice = createSlice({
       });
 
     // ── FETCH PROFILE ──
+    // /users/data devuelve UserDTO: { id, username, firstName, lastName, email, password, role }
     builder
       .addCase(fetchProfile.fulfilled, (state, action) => {
+        // Mergear — preservar lo que ya tenemos y agregar/actualizar con lo del servidor
         state.user = {
           ...state.user,
-          ...action.payload,
+          id:        action.payload.id        ?? state.user?.id,
+          username:  action.payload.username  ?? state.user?.username,
+          firstName: action.payload.firstName ?? state.user?.firstName,
+          lastName:  action.payload.lastName  ?? state.user?.lastName,
+          email:     action.payload.email     ?? state.user?.email,
+          role:      action.payload.role      ?? state.user?.role,
         };
       })
       .addCase(fetchProfile.rejected, (state) => {
-        // If profile fetch fails, log out
-        state.token = null;
-        state.user = null;
-        state.isAuthenticated = false;
+        // Si falla el perfil no cerramos sesión automáticamente
+        // (el token puede seguir siendo válido, solo falló la red)
+        // Solo deslogueamos si no tenemos datos básicos del usuario
+        if (!state.user?.username) {
+          state.token = null;
+          state.user = null;
+          state.isAuthenticated = false;
+        }
       });
   },
 });
