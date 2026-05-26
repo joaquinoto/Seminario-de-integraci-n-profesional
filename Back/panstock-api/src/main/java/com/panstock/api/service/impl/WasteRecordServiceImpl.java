@@ -42,8 +42,6 @@ public class WasteRecordServiceImpl implements WasteRecordService {
 
         validateWasteRequest(batch, request);
 
-        // El userId es OBLIGATORIO para registrar la merma y saber quién la registró.
-        // Si no se recibe, lanzamos BadRequestException con mensaje claro.
         if (request.userId() == null) {
             throw new BadRequestException(
                     "Se requiere el id del usuario que registra la merma.");
@@ -63,7 +61,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         WasteRecord wasteRecord = new WasteRecord();
         wasteRecord.setProduct(product);
         wasteRecord.setBatch(batch);
-        wasteRecord.setCreatedBy(user);           // SIEMPRE asignamos el usuario
+        wasteRecord.setCreatedBy(user);
         wasteRecord.setQuantity(request.quantity());
         wasteRecord.setReason(request.reason());
         wasteRecord.setUnitCost(unitCost);
@@ -107,7 +105,6 @@ public class WasteRecordServiceImpl implements WasteRecordService {
             WasteReason reason,
             Long createdById
     ) {
-        // Convertir fechas a LocalDateTime para la consulta
         LocalDateTime fromDt = from != null ? from.atStartOfDay()                         : null;
         LocalDateTime toDt   = to   != null ? to.plusDays(1).atStartOfDay().minusNanos(1) : null;
 
@@ -116,9 +113,6 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                     "La fecha hasta no puede ser anterior a la fecha desde.");
         }
 
-        // Usamos el nuevo método search que empuja los filtros de fecha y usuario a la BD.
-        // Los filtros de categoría, proveedor y motivo se aplican en memoria
-        // (el volumen de datos de un MVP es manejable).
         List<WasteRecord> records = wasteRecordRepository.search(fromDt, toDt, createdById);
 
         return records.stream()
@@ -156,6 +150,21 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         return false;
     }
 
+    /**
+     * Valida las reglas de negocio antes de registrar una merma.
+     *
+     * Reglas generales:
+     *   - La cantidad debe ser mayor a cero
+     *   - La cantidad no puede superar el stock del lote
+     *   - El lote no puede estar DEPLETED ni DISCARDED
+     *
+     * Regla específica para motivo EXPIRED:
+     *   - El lote DEBE tener fecha de vencimiento definida
+     *   - La fecha de vencimiento DEBE ser anterior o igual a hoy
+     *     (es decir, el lote debe estar efectivamente vencido)
+     *   - Si el lote no está vencido, se lanza BadRequestException con
+     *     mensaje claro para que el frontend lo muestre al usuario
+     */
     private void validateWasteRequest(InventoryBatch batch, WasteRecordRequest request) {
         if (request.quantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BadRequestException(
@@ -163,12 +172,31 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         }
         if (batch.getCurrentQuantity().compareTo(request.quantity()) < 0) {
             throw new BadRequestException(
-                    "No se puede registrar una merma mayor al stock disponible del lote.");
+                    "No se puede registrar una merma mayor al stock disponible del lote. "
+                    + "Stock actual: " + batch.getCurrentQuantity() + ".");
         }
         if (batch.getBatchStatus() == BatchStatus.DEPLETED
                 || batch.getBatchStatus() == BatchStatus.DISCARDED) {
             throw new BadRequestException(
                     "No se puede registrar merma sobre un lote sin stock disponible.");
+        }
+
+        // Validación específica para motivo EXPIRED:
+        // el lote debe estar efectivamente vencido a la fecha de hoy.
+        if (request.reason() == WasteReason.EXPIRED) {
+            if (batch.getExpirationDate() == null) {
+                throw new BadRequestException(
+                        "El lote seleccionado no tiene fecha de vencimiento registrada. "
+                        + "Para registrar una merma por vencimiento, el lote debe tener "
+                        + "fecha de vencimiento y ésta debe ser anterior o igual a la fecha actual.");
+            }
+            if (batch.getExpirationDate().isAfter(LocalDate.now())) {
+                throw new BadRequestException(
+                        "El lote seleccionado no está vencido (vence el "
+                        + batch.getExpirationDate() + "). "
+                        + "El motivo 'Vencido' solo puede usarse con lotes cuya fecha de "
+                        + "vencimiento sea anterior o igual a la fecha actual.");
+            }
         }
     }
 }

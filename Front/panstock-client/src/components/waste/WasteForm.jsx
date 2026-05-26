@@ -183,7 +183,8 @@ export default function WasteForm({ onSuccess, onCancel }) {
     if (status === 'succeeded') setShowSuccess(true);
   }, [status]);
 
-  // Solo lotes AVAILABLE con stock > 0
+  // ── Lotes disponibles con stock > 0 ──────────────────────────────────────
+  // Solo lotes AVAILABLE con stock > 0 (base siempre)
   const availableBatches = useMemo(
     () =>
       batches.filter(
@@ -192,10 +193,35 @@ export default function WasteForm({ onSuccess, onCancel }) {
     [batches]
   );
 
+  // ── Lotes filtrados según motivo seleccionado ─────────────────────────────
+  // Si el motivo es EXPIRED → mostrar SOLO lotes con expirationStatus === 'EXPIRED'
+  // Para otros motivos → mostrar todos los disponibles con stock > 0
+  const filteredBatches = useMemo(() => {
+    if (form.reason === 'EXPIRED') {
+      return availableBatches.filter((b) => b.expirationStatus === 'EXPIRED');
+    }
+    return availableBatches;
+  }, [availableBatches, form.reason]);
+
+  // ── ¿Hay lotes vencidos disponibles? (solo relevante para EXPIRED) ────────
+  const noExpiredBatchesAvailable =
+    form.reason === 'EXPIRED' && filteredBatches.length === 0;
+
   const selectedBatch = useMemo(
-    () => availableBatches.find((b) => String(b.id) === String(form.batchId)) || null,
-    [availableBatches, form.batchId]
+    () => filteredBatches.find((b) => String(b.id) === String(form.batchId)) || null,
+    [filteredBatches, form.batchId]
   );
+
+  // Si el lote seleccionado queda fuera al cambiar a EXPIRED, lo deseleccionamos
+  useEffect(() => {
+    if (form.batchId && form.reason === 'EXPIRED') {
+      const stillValid = filteredBatches.some((b) => String(b.id) === String(form.batchId));
+      if (!stillValid) {
+        setForm((p) => ({ ...p, batchId: '', quantity: '' }));
+        setFE((p) => ({ ...p, batchId: undefined, quantity: undefined }));
+      }
+    }
+  }, [form.reason]); // eslint-disable-line
 
   // Preview de pérdida económica
   const estimatedLoss = useMemo(() => {
@@ -219,13 +245,26 @@ export default function WasteForm({ onSuccess, onCancel }) {
   // ── Validación ────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
-    if (!form.batchId) e.batchId = 'Seleccioná un lote';
+    if (!form.batchId) {
+      e.batchId = form.reason === 'EXPIRED'
+        ? 'Seleccioná un lote vencido'
+        : 'Seleccioná un lote';
+    }
     if (!form.reason)  e.reason  = 'Seleccioná un motivo';
     const qty = Number(form.quantity);
     if (!form.quantity || isNaN(qty) || qty <= 0)
       e.quantity = 'La cantidad debe ser mayor a cero';
     else if (selectedBatch && qty > Number(selectedBatch.currentQuantity))
       e.quantity = `Máximo disponible: ${selectedBatch.currentQuantity}`;
+
+    // Validación extra en el front: si el motivo es EXPIRED y el batch no está
+    // vencido (defensa ante race condition o datos desactualizados en Redux)
+    if (form.reason === 'EXPIRED' && selectedBatch) {
+      if (selectedBatch.expirationStatus !== 'EXPIRED') {
+        e.batchId = 'Este lote no está vencido. El motivo "Vencido" solo aplica a lotes con fecha de vencimiento pasada.';
+      }
+    }
+
     return e;
   };
 
@@ -234,12 +273,18 @@ export default function WasteForm({ onSuccess, onCancel }) {
     if (fieldErrors[field]) setFE((p) => ({ ...p, [field]: undefined }));
   };
 
+  // Al cambiar motivo, limpiar el batchId si no aplica y limpiar errores de lote
+  const handleReasonChange = (e) => {
+    const newReason = e.target.value;
+    setForm((p) => ({ ...p, reason: newReason, batchId: '', quantity: '' }));
+    setFE((p) => ({ ...p, reason: undefined, batchId: undefined, quantity: undefined }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
 
-    // Validación crítica: necesitamos el id del usuario autenticado
     if (!user?.id) {
       setFE({ _global: 'No se pudo identificar al usuario. Por favor, cerrá sesión y volvé a ingresar.' });
       return;
@@ -250,7 +295,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
         token,
         data: {
           batchId:  Number(form.batchId),
-          userId:   user.id,        // SIEMPRE enviamos el usuario autenticado
+          userId:   user.id,
           quantity: Number(form.quantity),
           reason:   form.reason,
           notes:    form.notes.trim() || null,
@@ -287,12 +332,12 @@ export default function WasteForm({ onSuccess, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="wf-form">
-      {/* Error global (ej: usuario no identificado) */}
+      {/* Error global */}
       {(error || fieldErrors._global) && (
         <Alert type="error">{error || fieldErrors._global}</Alert>
       )}
 
-      {/* Quién está registrando — siempre visible y destacado */}
+      {/* Quién está registrando */}
       {fullName ? (
         <div className="wf-author-banner">
           <div className="wf-author-avatar">
@@ -325,11 +370,67 @@ export default function WasteForm({ onSuccess, onCancel }) {
         </p>
       </div>
 
+      {/* ── MOTIVO — va PRIMERO para filtrar los lotes disponibles ── */}
+      <Field label="Motivo de la merma" required error={fieldErrors.reason}>
+        <div className="wf-reason-grid">
+          {WASTE_REASONS.map((r) => (
+            <label
+              key={r.value}
+              className={`wf-reason-opt ${form.reason === r.value ? 'selected' : ''}`}
+            >
+              <input
+                type="radio"
+                name="reason"
+                value={r.value}
+                checked={form.reason === r.value}
+                onChange={handleReasonChange}
+                disabled={isLoading}
+                className="wf-radio"
+              />
+              <span className="wf-reason-label">{r.label}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      {/* ── Aviso si motivo=EXPIRED y no hay lotes vencidos ── */}
+      {noExpiredBatchesAvailable && (
+        <div className="wf-no-expired-warning">
+          <span className="wf-no-expired-icon">💀</span>
+          <div>
+            <strong>No hay lotes vencidos con stock disponible.</strong>
+            <p>
+              Para registrar una merma por vencimiento, debe existir al menos un lote
+              cuya fecha de vencimiento ya haya pasado y que tenga stock mayor a cero.
+              Si el producto vencido no aparece aquí, verificá que el lote esté registrado
+              en el sistema con fecha de vencimiento.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Selector de lote ── */}
-      <Field label="Lote a descartar" required error={fieldErrors.batchId}>
+      <Field
+        label={
+          form.reason === 'EXPIRED'
+            ? 'Lote vencido a descartar'
+            : 'Lote a descartar'
+        }
+        required
+        error={fieldErrors.batchId}
+        hint={
+          form.reason === 'EXPIRED' && !noExpiredBatchesAvailable
+            ? 'Solo se muestran lotes con fecha de vencimiento pasada'
+            : undefined
+        }
+      >
         {batchesSt === 'loading' ? (
           <div className="wf-loading-sel">Cargando lotes disponibles...</div>
-        ) : availableBatches.length === 0 ? (
+        ) : noExpiredBatchesAvailable ? (
+          <div className="wf-loading-sel wf-no-expired-sel">
+            Sin lotes vencidos disponibles para este motivo.
+          </div>
+        ) : filteredBatches.length === 0 ? (
           <div className="wf-loading-sel" style={{ color: 'var(--warm-gray)' }}>
             No hay lotes disponibles con stock.
           </div>
@@ -338,12 +439,16 @@ export default function WasteForm({ onSuccess, onCancel }) {
             className={`wf-select ${fieldErrors.batchId ? 'err' : ''}`}
             value={form.batchId}
             onChange={handleChange('batchId')}
-            disabled={isLoading}
+            disabled={isLoading || noExpiredBatchesAvailable}
           >
-            <option value="">— Seleccioná un lote —</option>
-            {availableBatches.map((b) => {
+            <option value="">
+              {form.reason === 'EXPIRED'
+                ? '— Seleccioná un lote vencido —'
+                : '— Seleccioná un lote —'}
+            </option>
+            {filteredBatches.map((b) => {
               const exp = b.expirationDate
-                ? ` · Vence: ${formatDate(b.expirationDate)}`
+                ? ` · Venció: ${formatDate(b.expirationDate)}`
                 : '';
               const cfg =
                 EXPIRATION_CONFIG[b.expirationStatus] ||
@@ -383,6 +488,9 @@ export default function WasteForm({ onSuccess, onCancel }) {
               >
                 {EXPIRATION_CONFIG[selectedBatch.expirationStatus]?.icon}{' '}
                 {formatDate(selectedBatch.expirationDate)}
+                {selectedBatch.expirationStatus === 'EXPIRED' && (
+                  <span className="wf-expired-tag"> · VENCIDO ✓</span>
+                )}
               </span>
             </div>
           )}
@@ -404,29 +512,6 @@ export default function WasteForm({ onSuccess, onCancel }) {
         </div>
       )}
 
-      {/* ── Motivo ── */}
-      <Field label="Motivo de la merma" required error={fieldErrors.reason}>
-        <div className="wf-reason-grid">
-          {WASTE_REASONS.map((r) => (
-            <label
-              key={r.value}
-              className={`wf-reason-opt ${form.reason === r.value ? 'selected' : ''}`}
-            >
-              <input
-                type="radio"
-                name="reason"
-                value={r.value}
-                checked={form.reason === r.value}
-                onChange={handleChange('reason')}
-                disabled={isLoading}
-                className="wf-radio"
-              />
-              <span className="wf-reason-label">{r.label}</span>
-            </label>
-          ))}
-        </div>
-      </Field>
-
       {/* ── Cantidad ── */}
       <Field
         label="Cantidad a descartar"
@@ -446,7 +531,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
           placeholder="Ej: 3"
           value={form.quantity}
           onChange={handleChange('quantity')}
-          disabled={isLoading || !form.batchId}
+          disabled={isLoading || !form.batchId || noExpiredBatchesAvailable}
         />
       </Field>
 
@@ -485,7 +570,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
         <button
           type="submit"
           className="wf-submit"
-          disabled={isLoading || !form.batchId || !user?.id}
+          disabled={isLoading || !form.batchId || !user?.id || noExpiredBatchesAvailable}
         >
           {isLoading ? (
             <>
@@ -537,6 +622,36 @@ export default function WasteForm({ onSuccess, onCancel }) {
         }
         .wf-info-banner p {
           font-size: 0.8rem; color: var(--warm-gray); line-height: 1.5; margin: 0;
+        }
+
+        /* Aviso sin lotes vencidos */
+        .wf-no-expired-warning {
+          display: flex; gap: 12px; align-items: flex-start;
+          padding: 14px 16px; border-radius: var(--radius-md);
+          background: rgba(192,57,43,0.04);
+          border: 1.5px solid rgba(192,57,43,0.3);
+          animation: fadeIn 0.2s ease;
+        }
+        .wf-no-expired-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 1px; }
+        .wf-no-expired-warning strong {
+          display: block; font-size: 0.88rem; font-weight: 700;
+          color: #C0392B; margin-bottom: 4px;
+        }
+        .wf-no-expired-warning p {
+          font-size: 0.78rem; color: var(--warm-gray); line-height: 1.5; margin: 0;
+        }
+        .wf-no-expired-sel {
+          color: #C0392B !important;
+          background: rgba(192,57,43,0.04) !important;
+          border-color: rgba(192,57,43,0.3) !important;
+          font-style: italic;
+        }
+
+        /* Tag VENCIDO dentro de la batch card */
+        .wf-expired-tag {
+          font-size: 0.72rem; font-weight: 700; color: #C0392B;
+          background: rgba(192,57,43,0.1); padding: 1px 6px;
+          border-radius: 4px; margin-left: 4px;
         }
 
         /* Field */
