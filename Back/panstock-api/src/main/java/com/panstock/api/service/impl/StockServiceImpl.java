@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;          
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
@@ -30,8 +31,10 @@ import java.util.*;
 @Transactional
 public class StockServiceImpl implements StockService {
 
-    private static final String EXPIRATION_ALERT_DAYS_KEY = "expiration_alert_days";
-    private static final int    DEFAULT_EXPIRATION_ALERT_DAYS = 2;
+    private static final String   EXPIRATION_ALERT_DAYS_KEY    = "expiration_alert_days";
+    private static final int      DEFAULT_EXPIRATION_ALERT_DAYS = 2;
+    // ── Zona horaria del negocio ──────────────────────────────────────
+    private static final ZoneId   ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
     private final ProductRepository        productRepository;
     private final SupplierRepository       supplierRepository;
@@ -45,12 +48,14 @@ public class StockServiceImpl implements StockService {
     @Override
     public InventoryBatchResponse registerEntry(StockEntryRequest request) {
         Product product = productRepository.findById(request.productId())
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado con id " + request.productId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Producto no encontrado con id " + request.productId()));
 
         Supplier supplier = null;
         if (request.supplierId() != null) {
             supplier = supplierRepository.findById(request.supplierId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Proveedor no encontrado con id " + request.supplierId()));
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Proveedor no encontrado con id " + request.supplierId()));
         }
 
         validateStockEntry(product, request);
@@ -62,7 +67,7 @@ public class StockServiceImpl implements StockService {
         batch.setExpirationDate(request.expirationDate());
         batch.setInitialQuantity(request.quantity());
         batch.setCurrentQuantity(request.quantity());
-        batch.setUnitCost(request.unitCost() != null ? request.unitCost() : product.getCostPrice());
+        batch.setUnitCost(request.unitCost()      != null ? request.unitCost()      : product.getCostPrice());
         batch.setUnitSalePrice(request.unitSalePrice() != null ? request.unitSalePrice() : product.getSalePrice());
         batch.setStorageType(request.storageType());
         batch.setBatchStatus(BatchStatus.AVAILABLE);
@@ -75,33 +80,40 @@ public class StockServiceImpl implements StockService {
         movement.setBatch(savedBatch);
         movement.setMovementType(StockMovementType.ENTRY);
         movement.setQuantity(request.quantity());
-        movement.setNotes("Ingreso de mercadería" + (request.notes() != null ? ": " + request.notes() : ""));
+        movement.setNotes("Ingreso de mercadería"
+                + (request.notes() != null ? ": " + request.notes() : ""));
         stockMovementRepository.save(movement);
 
-        return InventoryBatchMapper.toResponse(savedBatch, calculateExpirationStatus(savedBatch.getExpirationDate()));
+        return InventoryBatchMapper.toResponse(
+                savedBatch, calculateExpirationStatus(savedBatch.getExpirationDate()));
     }
 
     // ── Sale ─────────────────────────────────────────────────────────────────
 
     @Override
     public StockOperationResponse registerSale(StockSaleRequest request) {
-        validatePositiveQuantity(request.quantity(), "La cantidad vendida debe ser mayor a cero.");
+        validatePositiveQuantity(request.quantity(),
+                "La cantidad vendida debe ser mayor a cero.");
 
         Product product = productRepository.findById(request.productId())
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado con id " + request.productId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Producto no encontrado con id " + request.productId()));
 
         validateProductCanMoveStock(product);
 
         User user = findUserIfPresent(request.userId());
 
-        List<InventoryBatch> sellableBatches = inventoryBatchRepository.findSellableByProductId(product.getId());
+        List<InventoryBatch> sellableBatches =
+                inventoryBatchRepository.findSellableByProductId(product.getId());
 
         BigDecimal availableQuantity = sellableBatches.stream()
                 .map(InventoryBatch::getCurrentQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         if (availableQuantity.compareTo(request.quantity()) < 0) {
-            throw new BadRequestException("No hay stock suficiente para vender. Stock disponible: " + availableQuantity);
+            throw new BadRequestException(
+                    "No hay stock suficiente para vender. Stock disponible: "
+                    + availableQuantity);
         }
 
         BigDecimal remainingQuantity = request.quantity();
@@ -123,7 +135,8 @@ public class StockServiceImpl implements StockService {
             movement.setUser(user);
             movement.setMovementType(StockMovementType.SALE);
             movement.setQuantity(toDiscount);
-            movement.setNotes("Venta manual" + (request.notes() != null ? ": " + request.notes() : ""));
+            movement.setNotes("Venta manual"
+                    + (request.notes() != null ? ": " + request.notes() : ""));
             createdMovements.add(stockMovementRepository.save(movement));
 
             remainingQuantity = remainingQuantity.subtract(toDiscount);
@@ -132,18 +145,19 @@ public class StockServiceImpl implements StockService {
         return new StockOperationResponse(
                 StockMovementType.SALE.name(),
                 product.getId(), product.getName(), request.quantity(),
-                createdMovements.stream().map(StockMovementMapper::toResponse).toList()
-        );
+                createdMovements.stream().map(StockMovementMapper::toResponse).toList());
     }
 
     // ── Adjustment ────────────────────────────────────────────────────────────
 
     @Override
     public StockOperationResponse registerAdjustment(StockAdjustmentRequest request) {
-        validatePositiveQuantity(request.quantity(), "La cantidad del ajuste debe ser mayor a cero.");
+        validatePositiveQuantity(request.quantity(),
+                "La cantidad del ajuste debe ser mayor a cero.");
 
         InventoryBatch batch = inventoryBatchRepository.findById(request.batchId())
-                .orElseThrow(() -> new ResourceNotFoundException("Lote no encontrado con id " + request.batchId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Lote no encontrado con id " + request.batchId()));
 
         Product product = batch.getProduct();
         validateProductCanMoveStock(product);
@@ -158,15 +172,18 @@ public class StockServiceImpl implements StockService {
 
         if (request.adjustmentType() == StockAdjustmentType.IN) {
             batch.setCurrentQuantity(batch.getCurrentQuantity().add(request.quantity()));
-            if (batch.getBatchStatus() == BatchStatus.DEPLETED) batch.setBatchStatus(BatchStatus.AVAILABLE);
+            if (batch.getBatchStatus() == BatchStatus.DEPLETED)
+                batch.setBatchStatus(BatchStatus.AVAILABLE);
             movementType = StockMovementType.ADJUSTMENT_IN;
         } else if (request.adjustmentType() == StockAdjustmentType.OUT) {
             if (batch.getCurrentQuantity().compareTo(request.quantity()) < 0) {
                 throw new BadRequestException(
-                        "No se puede descontar más stock del disponible. Disponible: " + batch.getCurrentQuantity());
+                        "No se puede descontar más stock del disponible. Disponible: "
+                        + batch.getCurrentQuantity());
             }
             batch.setCurrentQuantity(batch.getCurrentQuantity().subtract(request.quantity()));
-            if (batch.getCurrentQuantity().compareTo(BigDecimal.ZERO) == 0) batch.setBatchStatus(BatchStatus.DEPLETED);
+            if (batch.getCurrentQuantity().compareTo(BigDecimal.ZERO) == 0)
+                batch.setBatchStatus(BatchStatus.DEPLETED);
             movementType = StockMovementType.ADJUSTMENT_OUT;
         } else {
             throw new BadRequestException("Tipo de ajuste inválido.");
@@ -180,12 +197,12 @@ public class StockServiceImpl implements StockService {
         movement.setUser(user);
         movement.setMovementType(movementType);
         movement.setQuantity(request.quantity());
-        movement.setNotes("Ajuste manual de stock" + (request.notes() != null ? ": " + request.notes() : ""));
+        movement.setNotes("Ajuste manual de stock"
+                + (request.notes() != null ? ": " + request.notes() : ""));
 
         return new StockOperationResponse(
                 movementType.name(), product.getId(), product.getName(), request.quantity(),
-                List.of(StockMovementMapper.toResponse(stockMovementRepository.save(movement)))
-        );
+                List.of(StockMovementMapper.toResponse(stockMovementRepository.save(movement))));
     }
 
     // ── Queries ───────────────────────────────────────────────────────────────
@@ -193,7 +210,6 @@ public class StockServiceImpl implements StockService {
     @Override
     @Transactional(readOnly = true)
     public List<StockSummaryResponse> getStockSummary() {
-        // Solo lotes de productos ACTIVOS
         List<InventoryBatch> batches = inventoryBatchRepository.findAvailableWithStock()
                 .stream()
                 .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))
@@ -202,7 +218,8 @@ public class StockServiceImpl implements StockService {
         Map<Long, StockAccumulator> grouped = new LinkedHashMap<>();
         for (InventoryBatch batch : batches) {
             Product p = batch.getProduct();
-            grouped.putIfAbsent(p.getId(), new StockAccumulator(p.getId(), p.getName(), p.getOrigin(), p.getUnitType()));
+            grouped.putIfAbsent(p.getId(),
+                    new StockAccumulator(p.getId(), p.getName(), p.getOrigin(), p.getUnitType()));
             grouped.get(p.getId()).addBatch(batch);
         }
         return grouped.values().stream().map(StockAccumulator::toResponse).toList();
@@ -212,7 +229,8 @@ public class StockServiceImpl implements StockService {
     @Transactional(readOnly = true)
     public List<InventoryBatchResponse> getBatches() {
         return inventoryBatchRepository.findAll().stream()
-                .map(b -> InventoryBatchMapper.toResponse(b, calculateExpirationStatus(b.getExpirationDate())))
+                .map(b -> InventoryBatchMapper.toResponse(
+                        b, calculateExpirationStatus(b.getExpirationDate())))
                 .toList();
     }
 
@@ -220,45 +238,38 @@ public class StockServiceImpl implements StockService {
     @Transactional(readOnly = true)
     public InventoryBatchResponse getBatchById(Long id) {
         InventoryBatch batch = inventoryBatchRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Lote no encontrado con id " + id));
-        return InventoryBatchMapper.toResponse(batch, calculateExpirationStatus(batch.getExpirationDate()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Lote no encontrado con id " + id));
+        return InventoryBatchMapper.toResponse(
+                batch, calculateExpirationStatus(batch.getExpirationDate()));
     }
 
-    /**
-     * Devuelve lotes con fecha de vencimiento de productos ACTIVOS que no están vencidos.
-     *
-     * - days == null  → todos (sin filtro de ventana). Lo usa el dashboard/semáforo.
-     * - days == N     → solo los que vencen dentro de N días. Lo usa /api/stock/expiring?days=N.
-     *
-     * Orden: RED → YELLOW → GREEN, luego por fecha ascendente.
-     */
     @Override
     @Transactional(readOnly = true)
     public List<ExpirationItemResponse> getExpiring(Integer days) {
         return inventoryBatchRepository.findAvailableWithStock().stream()
-                .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))  // ← solo activos
+                .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))
                 .filter(b -> b.getExpirationDate() != null)
                 .map(this::toExpirationItem)
                 .filter(i -> i.status() != ExpirationStatus.EXPIRED)
                 .filter(i -> {
                     if (days == null) return true;
-                    return i.daysToExpire() != null && i.daysToExpire() >= 0 && i.daysToExpire() <= days;
+                    return i.daysToExpire() != null
+                            && i.daysToExpire() >= 0
+                            && i.daysToExpire() <= days;
                 })
                 .sorted(Comparator
                         .comparingInt((ExpirationItemResponse i) -> statusOrder(i.status()))
-                        .thenComparingLong(i -> i.daysToExpire() != null ? i.daysToExpire() : Long.MAX_VALUE))
+                        .thenComparingLong(
+                                i -> i.daysToExpire() != null ? i.daysToExpire() : Long.MAX_VALUE))
                 .toList();
     }
 
-    /**
-     * Devuelve lotes vencidos de productos ACTIVOS.
-     * (Los de productos inactivos ya fueron retirados de la venta — no hay acción posible.)
-     */
     @Override
     @Transactional(readOnly = true)
     public List<ExpirationItemResponse> getExpired() {
         return inventoryBatchRepository.findAll().stream()
-                .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))  // ← solo activos
+                .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))
                 .filter(b -> b.getExpirationDate() != null)
                 .map(this::toExpirationItem)
                 .filter(i -> i.status() == ExpirationStatus.EXPIRED)
@@ -266,12 +277,20 @@ public class StockServiceImpl implements StockService {
                 .toList();
     }
 
+    /**
+     * Calcula ExpirationStatus usando la fecha local de Buenos Aires.
+     * Esto garantiza que a las 23:00 en Argentina el backend no adelante
+     * la fecha al día siguiente (como ocurriría si el servidor corre en UTC).
+     */
     @Override
     @Transactional(readOnly = true)
     public ExpirationStatus calculateExpirationStatus(LocalDate expirationDate) {
         if (expirationDate == null) return ExpirationStatus.NOT_APPLICABLE;
 
-        long days = ChronoUnit.DAYS.between(LocalDate.now(), expirationDate);
+        // ── Se usa zona horaria Argentina ───────────────────────────
+        LocalDate today = LocalDate.now(ZONE);
+
+        long days = ChronoUnit.DAYS.between(today, expirationDate);
 
         if (days < 0)  return ExpirationStatus.EXPIRED;
         if (days == 0) return ExpirationStatus.RED;
@@ -284,31 +303,39 @@ public class StockServiceImpl implements StockService {
     private void validateStockEntry(Product product, StockEntryRequest request) {
         validateProductCanMoveStock(product);
         if (request.quantity().compareTo(BigDecimal.ZERO) <= 0)
-            throw new BadRequestException("La cantidad ingresada debe ser mayor a cero.");
+            throw new BadRequestException(
+                    "La cantidad ingresada debe ser mayor a cero.");
         if (Boolean.TRUE.equals(product.getPerishable()) && request.expirationDate() == null)
-            throw new BadRequestException("Los productos perecederos deben tener fecha de vencimiento.");
-        if (request.expirationDate() != null && request.expirationDate().isBefore(request.receivedDate()))
-            throw new BadRequestException("La fecha de vencimiento no puede ser anterior a la fecha de ingreso.");
+            throw new BadRequestException(
+                    "Los productos perecederos deben tener fecha de vencimiento.");
+        if (request.expirationDate() != null
+                && request.expirationDate().isBefore(request.receivedDate()))
+            throw new BadRequestException(
+                    "La fecha de vencimiento no puede ser anterior a la fecha de ingreso.");
     }
 
     private void validatePositiveQuantity(BigDecimal qty, String msg) {
-        if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) throw new BadRequestException(msg);
+        if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0)
+            throw new BadRequestException(msg);
     }
 
     private void validateProductCanMoveStock(Product product) {
         if (Boolean.FALSE.equals(product.getActive()))
-            throw new BadRequestException("No se puede operar stock sobre un producto inactivo.");
+            throw new BadRequestException(
+                    "No se puede operar stock sobre un producto inactivo.");
     }
 
     private User findUserIfPresent(Long userId) {
         if (userId == null) return null;
         return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado con id " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Usuario no encontrado con id " + userId));
     }
 
     private ExpirationItemResponse toExpirationItem(InventoryBatch batch) {
+        // ── Se usa zona horaria Argentina ───────────────────────────
         Long daysToExpire = batch.getExpirationDate() != null
-                ? ChronoUnit.DAYS.between(LocalDate.now(), batch.getExpirationDate())
+                ? ChronoUnit.DAYS.between(LocalDate.now(ZONE), batch.getExpirationDate())
                 : null;
         return new ExpirationItemResponse(
                 batch.getId(),
@@ -317,8 +344,7 @@ public class StockServiceImpl implements StockService {
                 batch.getCurrentQuantity(),
                 batch.getExpirationDate(),
                 daysToExpire,
-                calculateExpirationStatus(batch.getExpirationDate())
-        );
+                calculateExpirationStatus(batch.getExpirationDate()));
     }
 
     private int statusOrder(ExpirationStatus status) {
@@ -348,20 +374,26 @@ public class StockServiceImpl implements StockService {
         private BigDecimal totalQuantity = BigDecimal.ZERO;
         private LocalDate nearestExpirationDate;
 
-        StockAccumulator(Long productId, String productName, ProductOrigin origin, UnitType unitType) {
-            this.productId = productId; this.productName = productName;
-            this.origin = origin;       this.unitType = unitType;
+        StockAccumulator(Long productId, String productName,
+                         ProductOrigin origin, UnitType unitType) {
+            this.productId   = productId;
+            this.productName = productName;
+            this.origin      = origin;
+            this.unitType    = unitType;
         }
 
         void addBatch(InventoryBatch batch) {
             totalQuantity = totalQuantity.add(batch.getCurrentQuantity());
             LocalDate exp = batch.getExpirationDate();
-            if (exp != null && (nearestExpirationDate == null || exp.isBefore(nearestExpirationDate)))
+            if (exp != null
+                    && (nearestExpirationDate == null || exp.isBefore(nearestExpirationDate)))
                 nearestExpirationDate = exp;
         }
 
         StockSummaryResponse toResponse() {
-            return new StockSummaryResponse(productId, productName, origin, unitType, totalQuantity, nearestExpirationDate);
+            return new StockSummaryResponse(
+                    productId, productName, origin, unitType,
+                    totalQuantity, nearestExpirationDate);
         }
     }
 }

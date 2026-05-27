@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;          
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -28,14 +29,16 @@ import java.util.List;
 @Transactional
 public class PromotionServiceImpl implements PromotionService {
 
-    private static final String PROMOTION_SUGGESTION_DAYS_KEY = "promotion_suggestion_days";
-    private static final int DEFAULT_PROMOTION_SUGGESTION_DAYS = 2;
+    private static final String PROMOTION_SUGGESTION_DAYS_KEY    = "promotion_suggestion_days";
+    private static final int    DEFAULT_PROMOTION_SUGGESTION_DAYS = 2;
+    // ── Zona horaria del negocio ──────────────────────────────────────
+    private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
-    private final PromotionRepository promotionRepository;
-    private final ProductRepository productRepository;
+    private final PromotionRepository      promotionRepository;
+    private final ProductRepository        productRepository;
     private final InventoryBatchRepository inventoryBatchRepository;
-    private final UserJpaRepository userRepository;
-    private final AppSettingRepository appSettingRepository;
+    private final UserJpaRepository        userRepository;
+    private final AppSettingRepository     appSettingRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -53,10 +56,12 @@ public class PromotionServiceImpl implements PromotionService {
     @Override
     public PromotionResponse create(PromotionRequest request) {
         Product product = productRepository.findById(request.productId())
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado con id " + request.productId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Producto no encontrado con id " + request.productId()));
 
         if (Boolean.FALSE.equals(product.getActive())) {
-            throw new BadRequestException("No se puede crear una promoción para un producto inactivo.");
+            throw new BadRequestException(
+                    "No se puede crear una promoción para un producto inactivo.");
         }
 
         InventoryBatch batch = findBatchIfPresent(request.batchId());
@@ -81,10 +86,10 @@ public class PromotionServiceImpl implements PromotionService {
         promotion.setStartDate(request.startDate());
         promotion.setEndDate(request.endDate());
         promotion.setStatus(PromotionStatus.ACTIVE);
-        promotion.setSuggestedBySystem(request.suggestedBySystem() != null ? request.suggestedBySystem() : false);
+        promotion.setSuggestedBySystem(
+                request.suggestedBySystem() != null ? request.suggestedBySystem() : false);
 
         Promotion saved = promotionRepository.save(promotion);
-
         return PromotionMapper.toResponse(saved);
     }
 
@@ -109,37 +114,33 @@ public class PromotionServiceImpl implements PromotionService {
     @Override
     public PromotionResponse cancel(Long id) {
         Promotion promotion = promotionRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Promoción no encontrada con id " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Promoción no encontrada con id " + id));
 
         if (promotion.getStatus() == PromotionStatus.CANCELLED) {
             throw new BadRequestException("La promoción ya se encuentra cancelada.");
         }
 
         promotion.setStatus(PromotionStatus.CANCELLED);
-
         Promotion saved = promotionRepository.save(promotion);
-
         return PromotionMapper.toResponse(saved);
     }
 
-    private PromotionSuggestionResponse toSuggestionIfApplicable(InventoryBatch batch) {
-        Long daysToExpire = ChronoUnit.DAYS.between(LocalDate.now(), batch.getExpirationDate());
+    // ── Private helpers ───────────────────────────────────────────────────────
 
-        if (daysToExpire < 0) {
-            return null;
-        }
+    private PromotionSuggestionResponse toSuggestionIfApplicable(InventoryBatch batch) {
+        // ── Se usa zona horaria de Argentina ───────────────────────────
+        LocalDate today = LocalDate.now(ZONE);
+        Long daysToExpire = ChronoUnit.DAYS.between(today, batch.getExpirationDate());
+
+        if (daysToExpire < 0) return null;
 
         int suggestionDays = getPromotionSuggestionDays();
-
-        if (daysToExpire > suggestionDays) {
-            return null;
-        }
+        if (daysToExpire > suggestionDays) return null;
 
         ExpirationStatus status = calculateExpirationStatus(batch.getExpirationDate());
 
-        if (status != ExpirationStatus.RED && status != ExpirationStatus.YELLOW) {
-            return null;
-        }
+        if (status != ExpirationStatus.RED && status != ExpirationStatus.YELLOW) return null;
 
         BigDecimal suggestedDiscountPercentage = status == ExpirationStatus.RED
                 ? BigDecimal.valueOf(20)
@@ -156,65 +157,65 @@ public class PromotionServiceImpl implements PromotionService {
                 daysToExpire,
                 status,
                 suggestedDiscountPercentage,
-                suggestedTitle
-        );
+                suggestedTitle);
     }
 
     private void validatePromotionRequest(PromotionRequest request) {
         if (!request.endDate().isAfter(request.startDate())) {
-            throw new BadRequestException("La fecha de fin debe ser posterior a la fecha de inicio.");
+            throw new BadRequestException(
+                    "La fecha de fin debe ser posterior a la fecha de inicio.");
         }
 
         if (request.discountType() == DiscountType.PERCENTAGE) {
-            if (request.discountPercentage() == null) {
-                throw new BadRequestException("Las promociones por porcentaje deben indicar discountPercentage.");
-            }
-
-            if (request.promotionalPrice() != null) {
-                throw new BadRequestException("Las promociones por porcentaje no deben indicar promotionalPrice.");
-            }
+            if (request.discountPercentage() == null)
+                throw new BadRequestException(
+                        "Las promociones por porcentaje deben indicar discountPercentage.");
+            if (request.promotionalPrice() != null)
+                throw new BadRequestException(
+                        "Las promociones por porcentaje no deben indicar promotionalPrice.");
         }
 
         if (request.discountType() == DiscountType.FIXED_PRICE) {
-            if (request.promotionalPrice() == null) {
-                throw new BadRequestException("Las promociones por precio fijo deben indicar promotionalPrice.");
-            }
-
-            if (request.discountPercentage() != null) {
-                throw new BadRequestException("Las promociones por precio fijo no deben indicar discountPercentage.");
-            }
+            if (request.promotionalPrice() == null)
+                throw new BadRequestException(
+                        "Las promociones por precio fijo deben indicar promotionalPrice.");
+            if (request.discountPercentage() != null)
+                throw new BadRequestException(
+                        "Las promociones por precio fijo no deben indicar discountPercentage.");
         }
     }
 
     private InventoryBatch findBatchIfPresent(Long batchId) {
-        if (batchId == null) {
-            return null;
-        }
-
+        if (batchId == null) return null;
         return inventoryBatchRepository.findById(batchId)
-                .orElseThrow(() -> new ResourceNotFoundException("Lote no encontrado con id " + batchId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Lote no encontrado con id " + batchId));
     }
 
     private User findUserIfPresent(Long userId) {
-        if (userId == null) {
-            return null;
-        }
-
+        if (userId == null) return null;
         return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario no encontrado con id " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Usuario no encontrado con id " + userId));
     }
 
     private void validateBatchForPromotion(Product product, InventoryBatch batch) {
         if (!batch.getProduct().getId().equals(product.getId())) {
-            throw new BadRequestException("El lote indicado no pertenece al producto informado.");
+            throw new BadRequestException(
+                    "El lote indicado no pertenece al producto informado.");
         }
 
         if (batch.getCurrentQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BadRequestException("No se puede crear una promoción para un lote sin stock disponible.");
+            throw new BadRequestException(
+                    "No se puede crear una promoción para un lote sin stock disponible.");
         }
 
-        if (batch.getExpirationDate() != null && batch.getExpirationDate().isBefore(LocalDate.now())) {
-            throw new BadRequestException("No se puede crear una promoción para un lote vencido.");
+        // ── Se usa zona horaria de Argentina ───────────────────────────
+        LocalDate today = LocalDate.now(ZONE);
+        if (batch.getExpirationDate() != null
+                && batch.getExpirationDate().isBefore(today)) {
+            throw new BadRequestException(
+                    "No se puede crear una promoción para un lote vencido.");
         }
 
         if (promotionRepository.existsActiveByBatchId(batch.getId())) {
@@ -222,26 +223,19 @@ public class PromotionServiceImpl implements PromotionService {
         }
     }
 
+    /**
+     * Calcula ExpirationStatus usando la fecha local de Buenos Aires.
+     */
     private ExpirationStatus calculateExpirationStatus(LocalDate expirationDate) {
-        if (expirationDate == null) {
-            return ExpirationStatus.NOT_APPLICABLE;
-        }
+        if (expirationDate == null) return ExpirationStatus.NOT_APPLICABLE;
 
-        LocalDate today = LocalDate.now();
+        // ── Se usa zona horaria deArgentina ───────────────────────────
+        LocalDate today = LocalDate.now(ZONE);
         long daysToExpire = ChronoUnit.DAYS.between(today, expirationDate);
 
-        if (daysToExpire < 0) {
-            return ExpirationStatus.EXPIRED;
-        }
-
-        if (daysToExpire == 0) {
-            return ExpirationStatus.RED;
-        }
-
-        if (daysToExpire <= getPromotionSuggestionDays()) {
-            return ExpirationStatus.YELLOW;
-        }
-
+        if (daysToExpire < 0)  return ExpirationStatus.EXPIRED;
+        if (daysToExpire == 0) return ExpirationStatus.RED;
+        if (daysToExpire <= getPromotionSuggestionDays()) return ExpirationStatus.YELLOW;
         return ExpirationStatus.GREEN;
     }
 
