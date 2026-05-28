@@ -48,18 +48,25 @@ export const deleteProduct = createAsyncThunk(
   }
 );
 
+// ─── Estado inicial ───────────────────────────────────────────────────────────
+
+// Se extrae como constante para poder reutilizarlo en el reset de logout.
+const initialFilters = { activeOnly: true, origin: '', categoryId: '' };
+
+const initialState = {
+  items: [],
+  filters: initialFilters,
+  status: 'idle',
+  error: null,
+  actionStatus: 'idle',
+  actionError: null,
+};
+
 // ─── Slice ────────────────────────────────────────────────────────────────────
 
 const productsSlice = createSlice({
   name: 'products',
-  initialState: {
-    items: [],
-    filters: { activeOnly: true, origin: '', categoryId: '' },
-    status: 'idle',
-    error: null,
-    actionStatus: 'idle',
-    actionError: null,
-  },
+  initialState,
   reducers: {
     setProductFilters(state, action) {
       state.filters = { ...state.filters, ...action.payload };
@@ -67,6 +74,12 @@ const productsSlice = createSlice({
     clearProductActionState(state) {
       state.actionStatus = 'idle';
       state.actionError  = null;
+    },
+    // ── Resetear filtros explícitamente ────────────────────────────────
+    // Se puede llamar manualmente desde cualquier componente si se necesita.
+    // El reset automático en logout lo maneja el rootReducer en store.js.
+    resetProductFilters(state) {
+      state.filters = initialFilters;
     },
   },
   extraReducers: (builder) => {
@@ -107,7 +120,11 @@ const productsSlice = createSlice({
   },
 });
 
-export const { setProductFilters, clearProductActionState } = productsSlice.actions;
+export const {
+  setProductFilters,
+  clearProductActionState,
+  resetProductFilters,
+} = productsSlice.actions;
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 

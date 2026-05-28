@@ -36,7 +36,9 @@ const categoriesPersistConfig = {
 const productsPersistConfig = {
   key: 'panstock-products',
   storage,
-  whitelist: ['items', 'filters'],
+  // Los filtros de productos (origen, categoría, activeOnly) no deben
+  // persistirse entre sesiones: cada login debe empezar con filtros limpios.
+  whitelist: ['items'],
 };
 
 const suppliersPersistConfig = {
@@ -45,35 +47,49 @@ const suppliersPersistConfig = {
   whitelist: ['items'],
 };
 
-// ── ATENCIÓN: el slice de expiration NO se persiste ─────────────────────────
-// Persistir los conteos del semáforo causa que Redux Persist restaure
-// valores del día anterior al recargar la app o navegar entre páginas.
-// Como los datos de vencimiento se refrescan en cada montaje de AppTopbar,
-// DashboardPage y ExpirationPage, no hay ningún beneficio en persistirlos
-// y sí hay un costo: mostrar fechas incorrectas hasta que llega el fetch.
-//
-// ─────────────────────────────────────────────────────────────────────────────
+// ── expiration: sin persist (time-sensitive, siempre se refresca) ─────────────
 
 const wastePersistConfig = {
   key: 'panstock-waste',
   storage,
-  whitelist: ['activeFilters', 'users'],
+  // Los filtros de mermas (fechas, categoría, proveedor, motivo, usuario)
+  // no deben sobrevivir entre sesiones: cada login empieza desde cero.
+  // Solo se persiste 'users' (lista de usuarios para el dropdown del OWNER)
+  // para evitar un fetch extra innecesario al cargar la página de mermas.
+  whitelist: ['users'],
 };
 
-// ─── Root Reducer ─────────────────────────────────────────────────────────────
+// ─── Root Reducer con soporte para reset en logout ───────────────────────────
+//
+// Patrón "reset on logout": el rootReducer escucha la acción 'auth/logout'.
+// Cuando se despacha, resetea el estado de todos los slices que NO deben
+// sobrevivir entre sesiones (catálogo, stock, waste, expiration).
+// El slice de auth se resetea solo mediante su propio reducer.
+//
+// Ventaja: no hay que tocar los slices individuales; cualquier slice nuevo
+// que se agregue en el futuro se resetea automáticamente al hacer logout.
+// ─────────────────────────────────────────────────────────────────────────────
 
-const rootReducer = combineReducers({
+const appReducer = combineReducers({
   auth:       persistReducer(authPersistConfig,       authReducer),
   categories: persistReducer(categoriesPersistConfig, categoriesReducer),
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
-  // SIN persistReducer — siempre arranca limpio
-  //siempre arranca con el estado inicial (conteos en 0, items vacíos) y se puebla
- // inmediatamente desde el servidor al montar cualquier página.
   expiration: expirationReducer,
   stock:      stockReducer,
   waste:      persistReducer(wastePersistConfig,      wasteReducer),
 });
+
+const rootReducer = (state, action) => {
+  if (action.type === 'auth/logout') {
+    // Conservar solo la clave _persist de auth para que redux-persist
+    // no se confunda al rehidratar; todo lo demás se resetea a undefined
+    // (cada reducer usará su initialState).
+    const { auth } = state;
+    return appReducer({ auth }, action);
+  }
+  return appReducer(state, action);
+};
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 

@@ -23,17 +23,6 @@ const handleResponse = async (res) => {
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/waste-records
- *
- * Parámetros opcionales:
- *   params.from        → YYYY-MM-DD  (fecha desde)
- *   params.to          → YYYY-MM-DD  (fecha hasta)
- *   params.categoryId  → número
- *   params.supplierId  → número
- *   params.reason      → WasteReason enum string
- *   params.createdById → número (ID del usuario que registró)
- */
 export const fetchWasteRecords = createAsyncThunk(
   'waste/fetchAll',
   async ({ token, params = {} } = {}, { rejectWithValue }) => {
@@ -56,11 +45,6 @@ export const fetchWasteRecords = createAsyncThunk(
   }
 );
 
-/**
- * POST /api/waste-records
- * Body: { batchId, userId, quantity, reason, notes? }
- * userId es REQUERIDO — identifica quién registró la merma.
- */
 export const createWasteRecord = createAsyncThunk(
   'waste/create',
   async ({ token, data }, { rejectWithValue }) => {
@@ -76,11 +60,6 @@ export const createWasteRecord = createAsyncThunk(
   }
 );
 
-/**
- * GET /users  — carga la lista de usuarios para el filtro "Registrado por".
- * Solo el OWNER tiene acceso completo; el EMPLOYEE verá solo su propio registro
- * igualmente porque el backend filtra por su userId en ese caso.
- */
 export const fetchUsers = createAsyncThunk(
   'waste/fetchUsers',
   async ({ token }, { rejectWithValue }) => {
@@ -94,32 +73,39 @@ export const fetchUsers = createAsyncThunk(
   }
 );
 
-// ─── Slice ───────────────────────────────────────────────────────────────────
+// ─── Estado inicial ───────────────────────────────────────────────────────────
+
+// Se extrae como constante para poder reutilizarla en el reset de logout.
+const initialFilters = {
+  from:        '',
+  to:          '',
+  categoryId:  '',
+  supplierId:  '',
+  reason:      '',
+  createdById: '',
+};
+
+const initialState = {
+  items:        [],
+  listStatus:   'idle',
+  listError:    null,
+  actionStatus: 'idle',
+  actionError:  null,
+  lastCreated:  null,
+  users:        [],
+  usersStatus:  'idle',
+  // ── activeFilters NO se persiste entre sesiones ──────────────
+  // El wastePersistConfig en store.js ya no incluye 'activeFilters'
+  // en su whitelist. Pero además se define initialFilters como constante
+  // para que el reset del rootReducer (logout) devuelva siempre filtros limpios.
+  activeFilters: initialFilters,
+};
+
+// ─── Slice ────────────────────────────────────────────────────────────────────
 
 const wasteSlice = createSlice({
   name: 'waste',
-  initialState: {
-    items:        [],
-    listStatus:   'idle',   // idle | loading | succeeded | failed
-    listError:    null,
-    actionStatus: 'idle',   // idle | loading | succeeded | failed
-    actionError:  null,
-    lastCreated:  null,
-
-    // Lista de usuarios para el filtro (cargada solo si el usuario es OWNER)
-    users:        [],
-    usersStatus:  'idle',
-
-    // Filtros activos — persistidos en redux-persist para mantener estado
-    activeFilters: {
-      from:        '',
-      to:          '',
-      categoryId:  '',
-      supplierId:  '',
-      reason:      '',
-      createdById: '',   // NUEVO: filtro por usuario
-    },
-  },
+  initialState,
   reducers: {
     clearWasteActionState(state) {
       state.actionStatus = 'idle';
@@ -130,9 +116,14 @@ const wasteSlice = createSlice({
       state.activeFilters = { ...state.activeFilters, ...action.payload };
     },
     clearWasteFilters(state) {
-      state.activeFilters = {
-        from: '', to: '', categoryId: '', supplierId: '', reason: '', createdById: '',
-      };
+      state.activeFilters = initialFilters;
+    },
+    // ── Resetear filtros y lista (llamado al montar WastePage) ────────
+    resetWasteState(state) {
+      state.activeFilters = initialFilters;
+      state.items         = [];
+      state.listStatus    = 'idle';
+      state.listError     = null;
     },
   },
   extraReducers: (builder) => {
@@ -154,7 +145,6 @@ const wasteSlice = createSlice({
       .addCase(fetchUsers.pending,   (s) => { s.usersStatus = 'loading'; })
       .addCase(fetchUsers.fulfilled, (s, a) => {
         s.usersStatus = 'succeeded';
-        // La respuesta de GET /users es una Page<User>; extraemos el content
         const raw = a.payload;
         s.users = Array.isArray(raw) ? raw : (raw?.content ?? []);
       })
@@ -166,6 +156,7 @@ export const {
   clearWasteActionState,
   setWasteFilters,
   clearWasteFilters,
+  resetWasteState,
 } = wasteSlice.actions;
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
