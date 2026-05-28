@@ -1,15 +1,34 @@
+import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { logout, selectUser } from '../../features/auth/authSlice';
-import { selectSemaphoreCounts } from '../../features/stock/expirationSlice';
+import {
+  fetchSemaphore,
+  selectSemaphoreCounts,
+  clearExpirationState,   
+} from '../../features/stock/expirationSlice';
+import { selectToken } from '../../features/auth/authSlice';
 
 export default function AppTopbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user     = useSelector(selectUser);
+  const token    = useSelector(selectToken);
   const counts   = useSelector(selectSemaphoreCounts);
 
   const urgentCount = (counts.expired ?? 0) + (counts.red ?? 0) + (counts.yellow ?? 0);
+
+  // ── Se refresaca el semáforo al montar la topbar ─────────────────
+  // La topbar se monta en cada página. Al refrescar aquí garantizamos que
+  // el badge de vencimientos siempre muestre datos frescos del servidor,
+  // sin depender del estado cacheado en localStorage por Redux Persist.
+  // clearExpirationState() descarta los conteos viejos antes del fetch
+  // para que el badge no muestre valores desactualizados ni siquiera un instante.
+  useEffect(() => {
+    if (!token) return;
+    dispatch(clearExpirationState());
+    dispatch(fetchSemaphore({ token }));
+  }, [token, dispatch]);
 
   const handleLogout = () => {
     dispatch(logout());
@@ -96,7 +115,6 @@ export default function AppTopbar() {
       </div>
 
       <style>{`
-        /* ── Topbar shell ── */
         .topbar {
           position: sticky; top: 0; z-index: 200;
           background: rgba(247,243,238,0.96);
@@ -109,8 +127,6 @@ export default function AppTopbar() {
           display: flex; align-items: center; gap: var(--space-md);
           height: 54px;
         }
-
-        /* Brand */
         .topbar-brand {
           display: flex; align-items: center; gap: 7px;
           text-decoration: none; flex-shrink: 0;
@@ -119,15 +135,12 @@ export default function AppTopbar() {
           font-family: var(--font-display); font-size: 1.05rem; font-weight: 700;
           color: var(--espresso); letter-spacing: -0.01em;
         }
-
-        /* Nav */
         .topbar-nav {
           display: flex; align-items: center; gap: 1px;
           flex: 1; overflow-x: auto;
           scrollbar-width: none; -ms-overflow-style: none;
         }
         .topbar-nav::-webkit-scrollbar { display: none; }
-
         .topbar-link {
           position: relative; display: flex; align-items: center; gap: 5px;
           padding: 6px 9px; border-radius: var(--radius-md);
@@ -141,8 +154,6 @@ export default function AppTopbar() {
         }
         .topbar-link-icon  { font-size: 0.92rem; line-height: 1; }
         .topbar-link-label { line-height: 1; }
-
-        /* Badge (vencimientos) */
         .topbar-badge {
           display: inline-flex; align-items: center; justify-content: center;
           min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
@@ -150,8 +161,6 @@ export default function AppTopbar() {
           animation: pulse-badge 2s ease infinite;
         }
         @keyframes pulse-badge { 0%,100%{ opacity:1 } 50%{ opacity:0.65 } }
-
-        /* User block */
         .topbar-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .topbar-user-info { display: flex; align-items: center; gap: 7px; }
         .topbar-avatar {
@@ -163,7 +172,6 @@ export default function AppTopbar() {
         }
         .topbar-username { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
         .topbar-role { font-size: 0.85rem; }
-
         .topbar-logout {
           display: flex; align-items: center; gap: 5px;
           padding: 6px 11px;
@@ -173,8 +181,6 @@ export default function AppTopbar() {
           transition: all var(--transition-fast); flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
-
-        /* Responsive — tablet/mobile */
         @media (max-width: 780px) {
           .hide-mobile         { display: none !important; }
           .topbar-link-label   { display: none; }

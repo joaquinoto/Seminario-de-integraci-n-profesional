@@ -7,6 +7,7 @@ import {
   selectSemaphoreCounts,
   selectSemaphoreStatus,
   selectSemaphoreError,
+  clearExpirationState,         
 } from '../features/stock/expirationSlice';
 import {
   deleteProduct,
@@ -119,31 +120,30 @@ export default function ExpirationPage() {
   const fetchErr = useSelector(selectSemaphoreError);
   const { status: actStatus } = useSelector(selectProductAction);
 
-  // Productos del store de Redux — fuente de verdad del estado active/inactive
   const allProducts = useSelector(selectProducts);
 
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [search,       setSearch]       = useState('');
-  const [confirmData,  setConfirmData]  = useState(null); // { productId, productName }
+  const [confirmData,  setConfirmData]  = useState(null);
 
-  // ── Fetch on mount ─────────────────────────────────────────────────────────
+  // ── Se limpia el estado antes de fetchear ─────────────────
+  // Esto evita que Redux Persist sirva datos viejos del localStorage mientras
+  // llega la respuesta fresca del servidor.
   useEffect(() => {
     if (!token) return;
+    // Limpiar items y conteos viejos del store ANTES del fetch
+    dispatch(clearExpirationState());
+    // Luego pedir datos frescos al servidor
     dispatch(fetchSemaphore({ token }));
-    // Asegurar que el store de productos esté actualizado para conocer active/inactive
     dispatch(fetchProducts({ token, params: { activeOnly: false } }));
   }, [token, dispatch]);
 
-  // ── Helper: ¿el producto ya está inactivo en el store? ────────────────────
-  // Combina la info del semáforo (que podría estar cacheada) con el estado
-  // real del producto en Redux. Si no se encuentra en el store, se asume activo.
   const isProductActive = (productId) => {
     const found = allProducts.find((p) => p.id === productId);
-    if (!found) return true; // si no está en store, no bloqueamos (podría no haberse cargado)
+    if (!found) return true;
     return found.active;
   };
 
-  // ── Filter ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = [...items];
     if (activeFilter !== 'ALL') list = list.filter((i) => i.status === activeFilter);
@@ -154,7 +154,6 @@ export default function ExpirationPage() {
     return list;
   }, [items, activeFilter, search]);
 
-  // Agrupar por producto
   const grouped = useMemo(() => {
     const map = new Map();
     for (const item of filtered) {
@@ -166,14 +165,12 @@ export default function ExpirationPage() {
     return Array.from(map.values());
   }, [filtered]);
 
-  // ── Deactivate ─────────────────────────────────────────────────────────────
   const handleDeactivateConfirm = () => {
     if (!confirmData) return;
     dispatch(deleteProduct({ token, id: confirmData.productId })).then(() => {
       dispatch(clearProductActionState());
       setConfirmData(null);
-      // Refrescar semáforo: el backend ahora excluye productos inactivos,
-      // así que el producto desaparecerá de la lista.
+      dispatch(clearExpirationState());
       dispatch(fetchSemaphore({ token }));
     });
   };
@@ -204,7 +201,12 @@ export default function ExpirationPage() {
           </div>
           <button
             className="exp-refresh-btn"
-            onClick={() => { dispatch(fetchSemaphore({ token })); dispatch(fetchProducts({ token, params: { activeOnly: false } })); }}
+            onClick={() => {
+              // Refresh manual: limpiar + refetch
+              dispatch(clearExpirationState());
+              dispatch(fetchSemaphore({ token }));
+              dispatch(fetchProducts({ token, params: { activeOnly: false } }));
+            }}
             disabled={status === 'loading'}
             title="Actualizar"
           >
@@ -216,16 +218,16 @@ export default function ExpirationPage() {
         {/* Error */}
         {fetchErr && <div className="exp-error">⚠ {fetchErr}</div>}
 
-        {/* Loading */}
-        {status === 'loading' && items.length === 0 && <TableSkeleton rows={6} />}
+        {/* Loading — mostrar skeleton mientras no hay datos frescos */}
+        {status === 'loading' && <TableSkeleton rows={6} />}
 
-        {/* Summary */}
-        {(status === 'succeeded' || items.length > 0) && (
+        {/* Summary — solo mostrar cuando ya tenemos datos del servidor (succeeded) */}
+        {status === 'succeeded' && (
           <SummaryBar counts={counts} activeFilter={activeFilter} onFilter={setActiveFilter} />
         )}
 
-        {/* Search + hint */}
-        {items.length > 0 && (
+        {/* Search */}
+        {status === 'succeeded' && items.length > 0 && (
           <div className="exp-controls">
             <div className="exp-search-wrap">
               <span className="exp-search-icon">🔍</span>
@@ -271,13 +273,12 @@ export default function ExpirationPage() {
         )}
 
         {/* Groups */}
-        {grouped.length > 0 && (
+        {status === 'succeeded' && grouped.length > 0 && (
           <div className="exp-groups">
             {grouped.map((group) => {
               const worst     = worstStatus(group.batches);
               const cfg       = STATUS_CONFIG[worst] || STATUS_CONFIG.GREEN;
               const hasUrgent = worst === 'EXPIRED' || worst === 'RED' || worst === 'YELLOW';
-              // ← CLAVE: chequear si el producto YA está inactivo en Redux
               const productActive = isProductActive(group.productId);
 
               return (
@@ -286,14 +287,12 @@ export default function ExpirationPage() {
                   className="exp-group"
                   style={{ '--group-color': cfg.color, '--group-bg': cfg.bg }}
                 >
-                  {/* Product header */}
                   <div className="exp-group-header">
                     <div className="exp-group-left">
                       <div className="exp-group-indicator" style={{ background: cfg.color }} />
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span className="exp-group-name">{group.productName}</span>
-                          {/* Badge "Inactivo" si el producto ya fue desactivado */}
                           {!productActive && (
                             <span className="exp-inactive-badge">🚫 Retirado de la venta</span>
                           )}
@@ -313,12 +312,6 @@ export default function ExpirationPage() {
                         Ver producto
                       </button>
 
-                      {/*
-                       * Mostrar "Retirar de la venta" SOLO si:
-                       *   1. Es OWNER
-                       *   2. Hay lotes urgentes (vencido / hoy / pronto)
-                       *   3. El producto todavía está activo en Redux
-                       */}
                       {isOwner(user) && hasUrgent && productActive && (
                         <button
                           className="exp-action-btn danger"
@@ -334,7 +327,6 @@ export default function ExpirationPage() {
                     </div>
                   </div>
 
-                  {/* Batch rows */}
                   <div className="exp-batches">
                     {group.batches.map((batch) => (
                       <div key={batch.batchId} className="exp-batch-row">
@@ -342,7 +334,7 @@ export default function ExpirationPage() {
                           <StatusPill status={batch.status} />
                           <span className="exp-batch-date">
                             📅 {batch.expirationDate
-                              ? new Date(batch.expirationDate).toLocaleDateString('es-AR', {
+                              ? new Date(batch.expirationDate + 'T00:00:00').toLocaleDateString('es-AR', {
                                   day: '2-digit', month: 'short', year: 'numeric',
                                 })
                               : '—'}
@@ -366,7 +358,7 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {grouped.length > 0 && (
+        {status === 'succeeded' && grouped.length > 0 && (
           <p className="exp-count">
             {grouped.length} producto{grouped.length !== 1 ? 's' : ''} ·{' '}
             {filtered.length} lote{filtered.length !== 1 ? 's' : ''}
@@ -374,7 +366,6 @@ export default function ExpirationPage() {
         )}
       </div>
 
-      {/* Confirm deactivate */}
       <ConfirmDialog
         isOpen={Boolean(confirmData)}
         onClose={() => setConfirmData(null)}
@@ -467,12 +458,10 @@ export default function ExpirationPage() {
         .exp-group-name  { display: block; font-weight: 700; font-size: 0.98rem; color: var(--espresso); }
         .exp-group-count { display: block; font-size: 0.74rem; color: var(--warm-gray); margin-top: 1px; }
 
-        /* Badge "Retirado de la venta" */
         .exp-inactive-badge {
           display: inline-flex; align-items: center; gap: 4px;
           padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
-          color: #7f1d1d; background: rgba(127,29,29,0.1);
-          white-space: nowrap;
+          color: #7f1d1d; background: rgba(127,29,29,0.1); white-space: nowrap;
         }
 
         .exp-group-actions { display: flex; gap: 8px; flex-wrap: wrap; }

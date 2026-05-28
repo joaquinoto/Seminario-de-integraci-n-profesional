@@ -2,7 +2,12 @@ import { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { selectUser, selectToken } from '../features/auth/authSlice';
-import { fetchSemaphore, selectSemaphoreCounts, selectSemaphoreStatus } from '../features/stock/expirationSlice';
+import {
+  fetchSemaphore,
+  selectSemaphoreCounts,
+  selectSemaphoreStatus,
+  clearExpirationState,     
+} from '../features/stock/expirationSlice';
 import AppTopbar from '../components/layout/AppTopbar';
 
 const roleLabels = {
@@ -10,7 +15,6 @@ const roleLabels = {
   EMPLOYEE: { label: 'Empleado/a',        color: '#2E7D32', bg: 'rgba(46,125,50,0.10)',  icon: '👤' },
 };
 
-// Both roles can access these
 const MAIN_MODULES = [
   { icon: '📦', title: 'Stock',        desc: 'Inventario, lotes e ingresos',           to: '/stock'      },
   { icon: '🗑️', title: 'Mermas',       desc: 'Registro de descartes y desperdicios',   to: '/waste'      },
@@ -39,7 +43,12 @@ export default function DashboardPage() {
   const role = roleLabels[user?.role] || roleLabels.EMPLOYEE;
 
   useEffect(() => {
-    if (token) dispatch(fetchSemaphore({ token }));
+    if (!token) return;
+    // ── Se limpia el estado viejo antes de pedir datos frescos ────────
+    // Evita que Redux Persist sirva conteos desactualizados del localStorage
+    // mientras llega la respuesta del servidor.
+    dispatch(clearExpirationState());
+    dispatch(fetchSemaphore({ token }));
   }, [token, dispatch]);
 
   const urgentCount = counts.expired + counts.red + counts.yellow;
@@ -106,7 +115,7 @@ export default function DashboardPage() {
           <span className="sem-arrow">→</span>
         </button>
 
-        {/* ── Operaciones principales (ambos roles) ── */}
+        {/* ── Operaciones principales ── */}
         <div>
           <h2 className="section-heading">Operaciones</h2>
           <div className="modules-grid">
@@ -140,7 +149,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Account info ── */}
+        {/* ── Info de cuenta ── */}
         <div className="info-card">
           <h2 className="info-title">Información de cuenta</h2>
           <div className="info-grid">
@@ -189,8 +198,6 @@ export default function DashboardPage() {
           padding: var(--space-xl) var(--space-lg);
           display: flex; flex-direction: column; gap: var(--space-xl);
         }
-
-        /* Welcome */
         .welcome-card {
           display: flex; align-items: center; gap: var(--space-lg);
           padding: var(--space-xl); background: var(--espresso);
@@ -209,8 +216,6 @@ export default function DashboardPage() {
           display: inline-flex; align-items: center; gap: 5px;
           padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
         }
-
-        /* Semaphore card */
         .semaphore-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-lg);
           padding: 18px 20px;
@@ -226,8 +231,7 @@ export default function DashboardPage() {
         .sem-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         .sem-icon-wrap {
           width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 1.3rem;
+          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
         }
         .sem-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
         .sem-sub   { font-size: 0.8rem; color: var(--warm-gray); }
@@ -238,8 +242,6 @@ export default function DashboardPage() {
         .sem-dot-label  { font-size: 0.62rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
         .sem-arrow { font-size: 1.1rem; color: var(--sem-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
         .semaphore-card:hover .sem-arrow { transform: translateX(4px); }
-
-        /* Info card */
         .info-card {
           background: white; border-radius: var(--radius-lg);
           padding: var(--space-xl); border: 1px solid var(--cream-dark);
@@ -256,8 +258,6 @@ export default function DashboardPage() {
           letter-spacing: 0.08em; color: var(--warm-gray-light);
         }
         .info-value { font-size: 0.88rem; color: var(--espresso); font-weight: 500; }
-
-        /* Modules */
         .section-heading {
           font-family: var(--font-display); font-size: 1rem; font-weight: 700;
           color: var(--espresso); margin-bottom: var(--space-md);
@@ -291,7 +291,6 @@ export default function DashboardPage() {
           color: var(--warm-gray-light); background: var(--cream-dark);
           padding: 3px 8px; border-radius: 10px; flex-shrink: 0;
         }
-
         @media (max-width: 480px) {
           .info-grid { grid-template-columns: 1fr; }
           .welcome-card { flex-direction: column; text-align: center; }

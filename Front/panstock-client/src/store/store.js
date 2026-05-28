@@ -45,19 +45,18 @@ const suppliersPersistConfig = {
   whitelist: ['items'],
 };
 
-// Solo contadores del semáforo — la lista se refresca al visitar la página
-const expirationPersistConfig = {
-  key: 'panstock-expiration',
-  storage,
-  whitelist: ['greenCount', 'yellowCount', 'redCount', 'expiredCount'],
-};
+// ── ATENCIÓN: el slice de expiration NO se persiste ─────────────────────────
+// Persistir los conteos del semáforo causa que Redux Persist restaure
+// valores del día anterior al recargar la app o navegar entre páginas.
+// Como los datos de vencimiento se refrescan en cada montaje de AppTopbar,
+// DashboardPage y ExpirationPage, no hay ningún beneficio en persistirlos
+// y sí hay un costo: mostrar fechas incorrectas hasta que llega el fetch.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Waste: persistir solo los filtros activos y la lista de usuarios cargada.
-// Los registros de merma siempre se traen frescos del servidor.
 const wastePersistConfig = {
   key: 'panstock-waste',
   storage,
-  // activeFilters incluye el nuevo campo createdById
   whitelist: ['activeFilters', 'users'],
 };
 
@@ -68,7 +67,10 @@ const rootReducer = combineReducers({
   categories: persistReducer(categoriesPersistConfig, categoriesReducer),
   products:   persistReducer(productsPersistConfig,   productsReducer),
   suppliers:  persistReducer(suppliersPersistConfig,  suppliersReducer),
-  expiration: persistReducer(expirationPersistConfig, expirationReducer),
+  // SIN persistReducer — siempre arranca limpio
+  //siempre arranca con el estado inicial (conteos en 0, items vacíos) y se puebla
+ // inmediatamente desde el servidor al montar cualquier página.
+  expiration: expirationReducer,
   stock:      stockReducer,
   waste:      persistReducer(wastePersistConfig,      wasteReducer),
 });

@@ -3,10 +3,6 @@ import { dashboardService, stockService } from '../../services/stockService';
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
-/**
- * Carga el semáforo completo desde /api/dashboard/expiration-semaphore
- * Devuelve: { greenCount, yellowCount, redCount, expiredCount, items }
- */
 export const fetchSemaphore = createAsyncThunk(
   'expiration/fetchSemaphore',
   async ({ token }, { rejectWithValue }) => {
@@ -18,9 +14,6 @@ export const fetchSemaphore = createAsyncThunk(
   }
 );
 
-/**
- * Carga solo los lotes próximos a vencer (con filtro de días opcional)
- */
 export const fetchExpiring = createAsyncThunk(
   'expiration/fetchExpiring',
   async ({ token, days = null }, { rejectWithValue }) => {
@@ -32,9 +25,6 @@ export const fetchExpiring = createAsyncThunk(
   }
 );
 
-/**
- * Carga solo los lotes ya vencidos
- */
 export const fetchExpired = createAsyncThunk(
   'expiration/fetchExpired',
   async ({ token }, { rejectWithValue }) => {
@@ -56,12 +46,18 @@ const expirationSlice = createSlice({
     redCount:     0,
     expiredCount: 0,
     items: [],
-    semaphoreStatus: 'idle',   
+    semaphoreStatus: 'idle',
     semaphoreError:  null,
-    lastFetch: null,           
+    lastFetch: null,
   },
   reducers: {
     clearExpirationState(state) {
+      // ── Se resetean TODOS los campos, incluidos conteos ────────────
+      // El persist config solo persiste los conteos (whitelist), por lo que
+      // al rehidratar desde localStorage los conteos viejos se restauran
+      // aunque los items no. Limpiar aquí garantiza que el badge de la topbar
+      // y los pills de la página de vencimientos muestren 0 mientras llega
+      // la respuesta fresca del servidor, en lugar de valores del día anterior.
       state.items          = [];
       state.greenCount     = 0;
       state.yellowCount    = 0;
@@ -73,7 +69,6 @@ const expirationSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // ── fetchSemaforo ──
     builder
       .addCase(fetchSemaphore.pending, (s) => {
         s.semaphoreStatus = 'loading';
@@ -110,7 +105,6 @@ export const selectSemaphoreStatus  = (s) => s.expiration.semaphoreStatus;
 export const selectSemaphoreError   = (s) => s.expiration.semaphoreError;
 export const selectLastFetch        = (s) => s.expiration.lastFetch;
 
-// Items filtrados por status
 export const selectExpiredItems  = (s) =>
   s.expiration.items.filter((i) => i.status === 'EXPIRED');
 export const selectRedItems      = (s) =>
