@@ -29,7 +29,9 @@ export function Modal({ isOpen, onClose, title, children, width = '520px' }) {
             </svg>
           </button>
         </div>
-        <div className="modal-body">{children}</div>
+      
+        <div className="modal-body"  >{children}</div>
+        
       </div>
 
       <style>{`
@@ -69,7 +71,7 @@ export function Modal({ isOpen, onClose, title, children, width = '520px' }) {
           transition: background var(--transition-fast), color var(--transition-fast);
         }
         .modal-close:hover { background: var(--cream-dark); color: var(--espresso); }
-        .modal-body { padding: 24px; }
+        .modal-body {padding:24px;}
       `}</style>
     </div>
   );

@@ -331,7 +331,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="wf-form">
+    <form onSubmit={handleSubmit} noValidate className="wf-form"   >
       {/* Error global */}
       {(error || fieldErrors._global) && (
         <Alert type="error">{error || fieldErrors._global}</Alert>

@@ -11,6 +11,8 @@ public record ExpirationItemResponse(
         Long productId,
         String productName,
 
+        String categoryName,
+
         BigDecimal currentQuantity,
 
         LocalDate expirationDate,

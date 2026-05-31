@@ -729,6 +729,7 @@ export default function WastePage() {
       </div>
 
       {/* ── Modal: Registrar merma ── */}
+
       <Modal
         isOpen={modalOpen}
         onClose={() => {
@@ -738,6 +739,7 @@ export default function WastePage() {
         title="Registrar merma"
         width="540px"
       >
+    
         <WasteForm
           onSuccess={handleFormSuccess}
           onCancel={() => {
@@ -745,8 +747,9 @@ export default function WastePage() {
             dispatch(clearWasteActionState());
           }}
         />
+        
       </Modal>
-
+      
       <style>{`
         .wp-page    { min-height: 100vh; background: var(--cream); }
         .wp-content {

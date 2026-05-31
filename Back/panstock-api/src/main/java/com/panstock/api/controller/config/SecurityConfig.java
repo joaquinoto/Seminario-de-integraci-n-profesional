@@ -41,6 +41,9 @@ public class SecurityConfig {
                     // ── Auth: public ─────────────────────────────────────────────────
                     .requestMatchers("/auth/**").permitAll()
 
+                    // ── Service Worker: public (necesario para que el SW cargue sin token) ──
+                    .requestMatchers("/sw.js").permitAll()
+
                     // ── Users ────────────────────────────────────────────────────────
                     .requestMatchers(HttpMethod.GET, "/users/data").authenticated()
                     .requestMatchers(HttpMethod.PUT, "/users/update").authenticated()
@@ -67,8 +70,8 @@ public class SecurityConfig {
                     // ── Stock: OWNER + EMPLOYEE ──────────────────────────────────────
                     .requestMatchers("/api/stock/**").authenticated()
 
-                    // ── Waste records OWNER + EMPLOYEE ────────────────────────────────
-                   .requestMatchers("/api/waste-records/**").authenticated()
+                    // ── Waste records: OWNER + EMPLOYEE ───────────────────────────────
+                    .requestMatchers("/api/waste-records/**").authenticated()
 
                     // ── Alerts: OWNER + EMPLOYEE ─────────────────────────────────────
                     .requestMatchers("/api/alerts/**").authenticated()

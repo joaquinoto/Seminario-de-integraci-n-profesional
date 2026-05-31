@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.ZoneId;          
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
@@ -33,7 +33,6 @@ public class StockServiceImpl implements StockService {
 
     private static final String   EXPIRATION_ALERT_DAYS_KEY    = "expiration_alert_days";
     private static final int      DEFAULT_EXPIRATION_ALERT_DAYS = 2;
-    // ── Zona horaria del negocio ──────────────────────────────────────
     private static final ZoneId   ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
     private final ProductRepository        productRepository;
@@ -92,8 +91,7 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public StockOperationResponse registerSale(StockSaleRequest request) {
-        validatePositiveQuantity(request.quantity(),
-                "La cantidad vendida debe ser mayor a cero.");
+        validatePositiveQuantity(request.quantity(), "La cantidad vendida debe ser mayor a cero.");
 
         Product product = productRepository.findById(request.productId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -112,8 +110,7 @@ public class StockServiceImpl implements StockService {
 
         if (availableQuantity.compareTo(request.quantity()) < 0) {
             throw new BadRequestException(
-                    "No hay stock suficiente para vender. Stock disponible: "
-                    + availableQuantity);
+                    "No hay stock suficiente para vender. Stock disponible: " + availableQuantity);
         }
 
         BigDecimal remainingQuantity = request.quantity();
@@ -152,8 +149,7 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public StockOperationResponse registerAdjustment(StockAdjustmentRequest request) {
-        validatePositiveQuantity(request.quantity(),
-                "La cantidad del ajuste debe ser mayor a cero.");
+        validatePositiveQuantity(request.quantity(), "La cantidad del ajuste debe ser mayor a cero.");
 
         InventoryBatch batch = inventoryBatchRepository.findById(request.batchId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -277,19 +273,12 @@ public class StockServiceImpl implements StockService {
                 .toList();
     }
 
-    /**
-     * Calcula ExpirationStatus usando la fecha local de Buenos Aires.
-     * Esto garantiza que a las 23:00 en Argentina el backend no adelante
-     * la fecha al día siguiente (como ocurriría si el servidor corre en UTC).
-     */
     @Override
     @Transactional(readOnly = true)
     public ExpirationStatus calculateExpirationStatus(LocalDate expirationDate) {
         if (expirationDate == null) return ExpirationStatus.NOT_APPLICABLE;
 
-        // ── Se usa zona horaria Argentina ───────────────────────────
         LocalDate today = LocalDate.now(ZONE);
-
         long days = ChronoUnit.DAYS.between(today, expirationDate);
 
         if (days < 0)  return ExpirationStatus.EXPIRED;
@@ -303,15 +292,12 @@ public class StockServiceImpl implements StockService {
     private void validateStockEntry(Product product, StockEntryRequest request) {
         validateProductCanMoveStock(product);
         if (request.quantity().compareTo(BigDecimal.ZERO) <= 0)
-            throw new BadRequestException(
-                    "La cantidad ingresada debe ser mayor a cero.");
+            throw new BadRequestException("La cantidad ingresada debe ser mayor a cero.");
         if (Boolean.TRUE.equals(product.getPerishable()) && request.expirationDate() == null)
-            throw new BadRequestException(
-                    "Los productos perecederos deben tener fecha de vencimiento.");
+            throw new BadRequestException("Los productos perecederos deben tener fecha de vencimiento.");
         if (request.expirationDate() != null
                 && request.expirationDate().isBefore(request.receivedDate()))
-            throw new BadRequestException(
-                    "La fecha de vencimiento no puede ser anterior a la fecha de ingreso.");
+            throw new BadRequestException("La fecha de vencimiento no puede ser anterior a la fecha de ingreso.");
     }
 
     private void validatePositiveQuantity(BigDecimal qty, String msg) {
@@ -321,8 +307,7 @@ public class StockServiceImpl implements StockService {
 
     private void validateProductCanMoveStock(Product product) {
         if (Boolean.FALSE.equals(product.getActive()))
-            throw new BadRequestException(
-                    "No se puede operar stock sobre un producto inactivo.");
+            throw new BadRequestException("No se puede operar stock sobre un producto inactivo.");
     }
 
     private User findUserIfPresent(Long userId) {
@@ -332,15 +317,22 @@ public class StockServiceImpl implements StockService {
                         "Usuario no encontrado con id " + userId));
     }
 
+    
     private ExpirationItemResponse toExpirationItem(InventoryBatch batch) {
-        // ── Se usa zona horaria Argentina ───────────────────────────
         Long daysToExpire = batch.getExpirationDate() != null
                 ? ChronoUnit.DAYS.between(LocalDate.now(ZONE), batch.getExpirationDate())
                 : null;
+
+        String categoryName = null;
+        if (batch.getProduct().getCategory() != null) {
+            categoryName = batch.getProduct().getCategory().getName();
+        }
+
         return new ExpirationItemResponse(
                 batch.getId(),
                 batch.getProduct().getId(),
                 batch.getProduct().getName(),
+                categoryName,
                 batch.getCurrentQuantity(),
                 batch.getExpirationDate(),
                 daysToExpire,
