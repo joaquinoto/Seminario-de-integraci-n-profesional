@@ -8,6 +8,12 @@ import {
   selectSemaphoreStatus,
   clearExpirationState,     
 } from '../features/stock/expirationSlice';
+import {
+  fetchRestockSuggestions,
+  selectRestockCount,
+  selectRestockStatus,
+  clearRestockState,
+} from '../features/stock/restockSlice';
 import AppTopbar from '../components/layout/AppTopbar';
 
 const roleLabels = {
@@ -27,6 +33,11 @@ const CATALOG_MODULES = [
   { icon: '🚚', title: 'Proveedores', desc: 'Franquicia, mayoristas y externos',      to: '/suppliers'  },
 ];
 
+// OWNER-only modules
+const OWNER_MODULES = [
+  { icon: '🛒', title: 'Reposición',  desc: 'Productos con stock por debajo del mínimo', to: '/restock' },
+];
+
 const COMING_MODULES = [
   { icon: '📊', title: 'Reportes',    desc: 'Mermas y pérdidas económicas'   },
   { icon: '🏷️', title: 'Promociones', desc: 'Descuentos por vencimiento'     },
@@ -39,7 +50,10 @@ export default function DashboardPage() {
   const token    = useSelector(selectToken);
   const counts   = useSelector(selectSemaphoreCounts);
   const semStatus= useSelector(selectSemaphoreStatus);
-
+  const restockCount  = useSelector(selectRestockCount);
+  const restockStatus = useSelector(selectRestockStatus);
+ 
+  const isOwner = user?.role === 'OWNER';
   const role = roleLabels[user?.role] || roleLabels.EMPLOYEE;
 
   useEffect(() => {
@@ -49,7 +63,12 @@ export default function DashboardPage() {
     // mientras llega la respuesta del servidor.
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
-  }, [token, dispatch]);
+    // Pre-fetch restock count so the badge in the dashboard card is ready
+    if (isOwner && restockStatus === 'idle') {
+      dispatch(clearRestockState());
+      dispatch(fetchRestockSuggestions({ token }));
+    }
+  }, [token, dispatch, isOwner]);
 
   const urgentCount = counts.expired + counts.red + counts.yellow;
   const semColor = counts.expired > 0 ? '#C0392B'
@@ -114,6 +133,42 @@ export default function DashboardPage() {
 
           <span className="sem-arrow">→</span>
         </button>
+        
+        {/* ── Restock card — OWNER only ── */}
+        {isOwner && (
+          <button
+            className="restock-card"
+            onClick={() => navigate('/restock')}
+            style={{
+              '--rst-color': restockCount > 0 ? '#E67E22' : '#27AE60',
+            }}
+          >
+            <div className="rst-left">
+              <div className="rst-icon-wrap" style={{ background: restockCount > 0 ? '#E67E22' : '#27AE60' }}>
+                🛒
+              </div>
+              <div>
+                <p className="rst-title">Reposición de stock</p>
+                <p className="rst-sub">
+                  {restockStatus === 'loading'
+                    ? 'Verificando inventario...'
+                    : restockCount > 0
+                      ? `${restockCount} producto${restockCount !== 1 ? 's' : ''} por debajo del mínimo`
+                      : 'Todo el stock sobre el mínimo'}
+                </p>
+              </div>
+            </div>
+ 
+            {restockCount > 0 && (
+              <div className="rst-badge">
+                <span className="rst-badge-count">{restockCount}</span>
+                <span className="rst-badge-label">a reponer</span>
+              </div>
+            )}
+ 
+            <span className="rst-arrow">→</span>
+          </button>
+        )}
 
         {/* ── Operaciones principales ── */}
         <div>
@@ -131,6 +186,28 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        {/* ── Gestión OWNER — solo se muestra al dueño ── */}
+        {isOwner && (
+          <div>
+            <h2 className="section-heading">Gestión de inventario</h2>
+            <div className="modules-grid">
+              {OWNER_MODULES.map((m) => (
+                <button key={m.title} className="module-card ready owner-module" onClick={() => navigate(m.to)}>
+                  <span className="module-icon">{m.icon}</span>
+                  <div className="module-text">
+                    <p className="module-title">{m.title}</p>
+                    <p className="module-desc">{m.desc}</p>
+                  </div>
+                  {restockCount > 0 && m.to === '/restock' && (
+                    <span className="module-count-badge">{restockCount}</span>
+                  )}
+                  <span className="module-arrow">→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Catálogo ── */}
         <div>
@@ -192,7 +269,7 @@ export default function DashboardPage() {
       </main>
 
       <style>{`
-        .dash-page { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
+       .dash-page { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
         .dash-main {
           max-width: 760px; margin: 0 auto;
           padding: var(--space-xl) var(--space-lg);
@@ -216,6 +293,8 @@ export default function DashboardPage() {
           display: inline-flex; align-items: center; gap: 5px;
           padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
         }
+ 
+        /* ── Semaphore card ── */
         .semaphore-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-lg);
           padding: 18px 20px;
@@ -242,6 +321,38 @@ export default function DashboardPage() {
         .sem-dot-label  { font-size: 0.62rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
         .sem-arrow { font-size: 1.1rem; color: var(--sem-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
         .semaphore-card:hover .sem-arrow { transform: translateX(4px); }
+ 
+        /* ── Restock card (OWNER only) ── */
+        .restock-card {
+          width: 100%; display: flex; align-items: center; gap: var(--space-lg);
+          padding: 18px 20px;
+          background: white; border: 2px solid var(--rst-color);
+          border-radius: var(--radius-xl); cursor: pointer; text-align: left;
+          font-family: var(--font-body);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+          transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+          animation: slideUp 0.4s ease 0.18s both;
+        }
+        .restock-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
+        .restock-card:active { transform: translateY(0); }
+        .rst-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+        .rst-icon-wrap {
+          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+        }
+        .rst-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
+        .rst-sub   { font-size: 0.8rem; color: var(--warm-gray); }
+        .rst-badge {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          padding: 6px 12px; border-radius: 12px;
+          background: rgba(230,126,34,0.10); flex-shrink: 0;
+        }
+        .rst-badge-count { font-size: 1.3rem; font-weight: 800; color: #E67E22; line-height: 1; }
+        .rst-badge-label { font-size: 0.6rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .rst-arrow { font-size: 1.1rem; color: var(--rst-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
+        .restock-card:hover .rst-arrow { transform: translateX(4px); }
+ 
+        /* ── Module cards ── */
         .info-card {
           background: white; border-radius: var(--radius-lg);
           padding: var(--space-xl); border: 1px solid var(--cream-dark);
@@ -275,6 +386,7 @@ export default function DashboardPage() {
           box-shadow: var(--shadow-md); border-color: var(--amber);
           transform: translateY(-1px); background: rgba(200,137,58,0.02);
         }
+        .module-card.owner-module:hover { border-color: #E67E22; }
         .module-card.ready:active { transform: translateY(0); }
         .module-card.soon  { opacity: 0.5; cursor: not-allowed; }
         .module-icon  { font-size: 1.4rem; flex-shrink: 0; }
@@ -286,6 +398,13 @@ export default function DashboardPage() {
           transition: transform var(--transition-fast);
         }
         .module-card.ready:hover .module-arrow { transform: translateX(3px); }
+        .module-count-badge {
+          display: inline-flex; align-items: center; justify-content: center;
+          min-width: 22px; height: 22px; padding: 0 5px;
+          border-radius: 11px; background: #E67E22; color: white;
+          font-size: 0.72rem; font-weight: 800; flex-shrink: 0;
+          animation: pulse-badge 2s ease infinite;
+        }
         .module-badge {
           font-size: 0.63rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
           color: var(--warm-gray-light); background: var(--cream-dark);
@@ -296,6 +415,7 @@ export default function DashboardPage() {
           .welcome-card { flex-direction: column; text-align: center; }
           .sem-dots { display: none; }
           .dash-main { padding: var(--space-lg) var(--space-md); }
+          .rst-badge { display: none; }
         }
       `}</style>
     </div>

@@ -10,6 +10,12 @@ import {
   selectRedCount,
   selectExpiredCount,
 } from '../../features/stock/expirationSlice';
+import {
+  fetchRestockSuggestions,
+  clearRestockState,
+  selectRestockCount,
+  selectRestockStatus,
+} from '../../features/stock/restockSlice';
 import NotificationBell from '../notifications/NotificationBell';
 import useNotifications from '../../features/notifications/useNotifications';
 
@@ -24,7 +30,11 @@ export default function AppTopbar() {
   const redCount     = useSelector(selectRedCount);
   const expiredCount = useSelector(selectExpiredCount);
   const urgentCount  = expiredCount + redCount + yellowCount;
-
+  // Restock — only relevant/fetched for OWNER
+  const restockCount  = useSelector(selectRestockCount);
+  const restockStatus = useSelector(selectRestockStatus);
+  const isOwner       = user?.role === 'OWNER';
+  
   const { requestPermission } = useNotifications();
 
   useEffect(() => {
@@ -33,27 +43,50 @@ export default function AppTopbar() {
     dispatch(fetchSemaphore({ token }));
   }, [token, dispatch]);
 
+  // Fetch restock suggestions on mount if OWNER
+  useEffect(() => {
+    if (!token || !isOwner) return;
+    // Only fetch if not already loaded to avoid hammering the backend on every nav
+    if (restockStatus === 'idle') {
+      dispatch(fetchRestockSuggestions({ token }));
+    }
+  }, [token, isOwner, restockStatus, dispatch]);
+
   const handleLogout = () => {
     dispatch(logout());
     navigate('/login', { replace: true });
   };
 
-  const badgeColor = expiredCount > 0 ? '#C0392B' : redCount > 0 ? '#E74C3C' : '#E67E22';
+  const expirationBadgeColor = expiredCount > 0 ? '#C0392B' : redCount > 0 ? '#E74C3C' : '#E67E22';
+  const restockBadgeColor    = '#E67E22';
 
-  const NAV_ITEMS = [
+  const BASE_NAV = [
     { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
     { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
     { to: '/waste',      label: 'Mermas',       icon: '🗑️', badge: null },
     {
       to: '/expiration', label: 'Vencimientos', icon: '⏰',
       badge: urgentCount > 0 ? urgentCount : null,
-      badgeColor,
+      badgeColor: expirationBadgeColor,
     },
     { to: '/products',   label: 'Productos',    icon: '🥐', badge: null },
     { to: '/categories', label: 'Categorías',   icon: '🗂',  badge: null },
     { to: '/suppliers',  label: 'Proveedores',  icon: '🚚', badge: null },
   ];
+  // Extra item only for OWNER
+  const OWNER_NAV = isOwner
+    ? [
+        {
+          to: '/restock',
+          label: 'Reposición',
+          icon: '🛒',
+          badge: restockCount > 0 ? restockCount : null,
+          badgeColor: restockBadgeColor,
+        },
+      ]
+    : [];
 
+  const NAV_ITEMS = [...BASE_NAV, ...OWNER_NAV];
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -115,7 +148,7 @@ export default function AppTopbar() {
       </div>
 
       <style>{`
-        .topbar {
+       .topbar {
           position: sticky; top: 0; z-index: 200;
           background: rgba(247,243,238,0.96);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);

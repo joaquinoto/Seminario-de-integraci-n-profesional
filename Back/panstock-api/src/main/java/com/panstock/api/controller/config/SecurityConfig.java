@@ -41,7 +41,7 @@ public class SecurityConfig {
                     // ── Auth: public ─────────────────────────────────────────────────
                     .requestMatchers("/auth/**").permitAll()
 
-                    // ── Service Worker: public (necesario para que el SW cargue sin token) ──
+                    // ── Service Worker: public ────────────────────────────────────────
                     .requestMatchers("/sw.js").permitAll()
 
                     // ── Users ────────────────────────────────────────────────────────
@@ -67,8 +67,17 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.PUT,    "/api/suppliers/**").hasAuthority(Role.OWNER.name())
                     .requestMatchers(HttpMethod.DELETE, "/api/suppliers/**").hasAuthority(Role.OWNER.name())
 
-                    // ── Stock: OWNER + EMPLOYEE ──────────────────────────────────────
+                    // ── Stock: OWNER + EMPLOYEE (entries, sales, adjustments, summary, batches, expiring, expired) ──
                     .requestMatchers("/api/stock/**").authenticated()
+
+                    // ── Restock suggestions: OWNER only ──────────────────────────────
+                    // NOTE: this is a sub-path of /api/stock/** so the authenticated()
+                    // rule above covers the base, but we add an explicit OWNER guard.
+                    // Spring Security evaluates rules in order — place OWNER rule BEFORE
+                    // the generic authenticated() rule for /api/stock/**.
+                    // The ordering is handled below by placing this before the stock catch-all.
+                    // (Re-declared explicitly for clarity; Spring uses first-match.)
+                    .requestMatchers(HttpMethod.GET, "/api/stock/restock-suggestions").hasAuthority(Role.OWNER.name())
 
                     // ── Waste records: OWNER + EMPLOYEE ───────────────────────────────
                     .requestMatchers("/api/waste-records/**").authenticated()

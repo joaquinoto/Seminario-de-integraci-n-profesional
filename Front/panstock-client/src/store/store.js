@@ -13,6 +13,7 @@ import expirationReducer    from '../features/stock/expirationSlice';
 import stockReducer         from '../features/stock/stockSlice';
 import wasteReducer         from '../features/waste/wasteSlice';
 import notificationsReducer from '../features/notifications/notificationsSlice';
+import restockReducer       from '../features/stock/restockSlice';
 
 const authPersistConfig = {
   key: 'panstock-auth', storage,
@@ -55,6 +56,7 @@ const appReducer = combineReducers({
   stock:         stockReducer,
   waste:         persistReducer(wastePersistConfig,         wasteReducer),
   notifications: persistReducer(notificationsPersistConfig, notificationsReducer),
+  restock:       restockReducer,
 });
 
 const rootReducer = (state, action) => {

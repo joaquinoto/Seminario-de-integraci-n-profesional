@@ -12,7 +12,7 @@ import CategoriesPage  from './pages/CategoriesPage';
 import SuppliersPage   from './pages/SuppliersPage';
 import StockPage       from './pages/StockPage';
 import WastePage       from './pages/WastePage';
-
+import Restockpage     from './pages/RestockPage';
 /**
  * TokenGuard — verifica en cada render si el JWT del store sigue vigente.
  * Si expiró, hace logout automático y redirige al login.
@@ -65,7 +65,7 @@ export default function App() {
         <Route path="/products"   element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
         <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
         <Route path="/suppliers"  element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />
-
+        <Route path="/restock"   element={<ProtectedRoute requireRole="OWNER"><Restockpage /></ProtectedRoute>} />            
         {/* Fallback */}
         <Route path="/"  element={<Navigate to={isAuth ? '/dashboard' : '/login'} replace />} />
         <Route path="*"  element={<Navigate to={isAuth ? '/dashboard' : '/login'} replace />} />

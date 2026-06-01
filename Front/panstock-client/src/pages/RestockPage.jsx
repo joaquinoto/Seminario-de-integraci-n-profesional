@@ -1,0 +1,700 @@
+import { useEffect, useState, useMemo } from 'react';
+import { useDispatch, useSelector }     from 'react-redux';
+import { useNavigate }                  from 'react-router-dom';
+import {
+  fetchRestockSuggestions,
+  clearRestockState,
+  selectRestockItems,
+  selectRestockStatus,
+  selectRestockError,
+  selectRestockLastFetch,
+} from '../features/stock/restockSlice';
+import { selectToken, selectUser } from '../features/auth/authSlice';
+import { TableSkeleton }           from '../components/ui/CatalogUI';
+import AppTopbar                   from '../components/layout/AppTopbar';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const UNIT_LABELS = {
+  UNIT: 'u.', KG: 'kg', GRAM: 'g',
+  TRAY: 'band.', BAG: 'bolsa', LITER: 'L', PACK: 'pack',
+};
+
+const formatDate = (d) =>
+  d
+    ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR', {
+        day: '2-digit', month: 'short', year: 'numeric',
+      })
+    : '—';
+
+const formatFmt = (d) => {
+  if (!d) return null;
+  const now  = new Date();
+  const then = new Date(d);
+  const diff = Math.floor((now - then) / 86_400_000);
+  if (diff === 0) return 'hoy';
+  if (diff === 1) return 'ayer';
+  if (diff < 7)  return `hace ${diff} días`;
+  if (diff < 30) return `hace ${Math.floor(diff / 7)} sem.`;
+  return `hace ${Math.floor(diff / 30)} mes(es)`;
+};
+
+/** Returns urgency level based on stock % */
+const urgency = (pct) => {
+  if (pct == null || pct === 0) return 'critical';
+  if (pct < 30) return 'high';
+  if (pct < 70) return 'medium';
+  return 'low';
+};
+
+const URGENCY_CONFIG = {
+  critical: { color: '#C0392B', bg: 'rgba(192,57,43,0.10)', label: 'Crítico',  icon: '🔴' },
+  high:     { color: '#E67E22', bg: 'rgba(230,126,34,0.10)', label: 'Urgente', icon: '🟠' },
+  medium:   { color: '#D68910', bg: 'rgba(214,137,16,0.09)', label: 'Medio',   icon: '🟡' },
+  low:      { color: '#2E7D32', bg: 'rgba(46,125,50,0.09)',  label: 'Bajo',    icon: '🟢' },
+};
+
+const ORIGIN_LABELS = {
+  FRANCHISE: { icon: '🏷', label: 'Franquicia' },
+  EXTERNAL:  { icon: '🌐', label: 'Externo'    },
+};
+
+// ─── StockBar ─────────────────────────────────────────────────────────────────
+function StockBar({ pct, color }) {
+  const clamped = Math.min(pct ?? 0, 100);
+  return (
+    <div className="sbar-wrap">
+      <div className="sbar-track">
+        <div
+          className="sbar-fill"
+          style={{ width: `${clamped}%`, background: color }}
+        />
+        <div className="sbar-min-line" title="Stock mínimo" />
+      </div>
+      <span className="sbar-pct" style={{ color }}>{clamped}%</span>
+      <style>{`
+        .sbar-wrap  { display: flex; align-items: center; gap: 8px; }
+        .sbar-track {
+          flex: 1; height: 8px; border-radius: 4px;
+          background: var(--cream-dark); position: relative; overflow: visible;
+        }
+        .sbar-fill  { height: 100%; border-radius: 4px; transition: width 0.5s ease; min-width: 4px; }
+        .sbar-min-line {
+          position: absolute; right: 0; top: -3px;
+          width: 2px; height: 14px; background: var(--espresso);
+          border-radius: 1px; opacity: 0.25;
+        }
+        .sbar-pct { font-size: 0.72rem; font-weight: 700; min-width: 32px; text-align: right; }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── RestockCard (mobile-first card per suggestion) ───────────────────────────
+function RestockCard({ item, index }) {
+  const [expanded, setExpanded] = useState(false);
+  const u   = urgency(item.stockPercentage);
+  const cfg = URGENCY_CONFIG[u];
+  const ul  = UNIT_LABELS[item.unitType] || '';
+  const org = ORIGIN_LABELS[item.origin] || ORIGIN_LABELS.EXTERNAL;
+
+  const missing = item.minimumStock != null && item.currentStock != null
+    ? parseFloat((item.minimumStock - item.currentStock).toFixed(3))
+    : null;
+
+  return (
+    <div
+      className={`rc-card ${expanded ? 'open' : ''}`}
+      style={{ '--urg-color': cfg.color, '--urg-bg': cfg.bg, animationDelay: `${index * 0.05}s` }}
+    >
+      {/* ── Header row (always visible) ── */}
+      <div className="rc-header" onClick={() => setExpanded((v) => !v)} role="button" aria-expanded={expanded}>
+        <div className="rc-urgency-bar" style={{ background: cfg.color }} />
+
+        <div className="rc-main">
+          {/* Row 1: name + urgency badge */}
+          <div className="rc-row1">
+            <div className="rc-name-group">
+              <span className="rc-name">{item.productName}</span>
+              <span className="rc-category">{item.categoryName}</span>
+            </div>
+            <span className="rc-badge" style={{ color: cfg.color, background: cfg.bg }}>
+              {cfg.icon} {cfg.label}
+            </span>
+          </div>
+
+          {/* Row 2: stock bar */}
+          <div className="rc-bar-row">
+            <StockBar pct={item.stockPercentage} color={cfg.color} />
+          </div>
+
+          {/* Row 3: quick numbers */}
+          <div className="rc-nums">
+            <div className="rc-num-item">
+              <span className="rc-num-label">Stock actual</span>
+              <span className="rc-num-val" style={{ color: cfg.color }}>
+                {Number(item.currentStock).toLocaleString('es-AR')} {ul}
+              </span>
+            </div>
+            <div className="rc-num-sep" />
+            <div className="rc-num-item">
+              <span className="rc-num-label">Stock mínimo</span>
+              <span className="rc-num-val">
+                {Number(item.minimumStock).toLocaleString('es-AR')} {ul}
+              </span>
+            </div>
+            {missing != null && (
+              <>
+                <div className="rc-num-sep" />
+                <div className="rc-num-item">
+                  <span className="rc-num-label">A reponer</span>
+                  <span className="rc-num-val" style={{ color: '#C0392B', fontWeight: 800 }}>
+                    +{Number(missing).toLocaleString('es-AR')} {ul}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Row 4: supplier + schedule (compact) */}
+          <div className="rc-supplier-row">
+            <span className="rc-origin-chip" style={{ background: 'rgba(28,17,8,0.06)' }}>
+              {org.icon} {org.label}
+            </span>
+            {item.supplierName && (
+              <span className="rc-supplier-chip">
+                🚚 {item.supplierName}
+              </span>
+            )}
+            <span className="rc-expand-icon">{expanded ? '▲' : '▼'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Expanded detail ── */}
+      {expanded && (
+        <div className="rc-detail">
+          {/* Schedule highlight */}
+          <div className="rc-schedule">
+            <span className="rc-schedule-icon">🕐</span>
+            <div>
+              <span className="rc-schedule-label">Horario de pedidos</span>
+              <span className="rc-schedule-val">{item.supplierOrderSchedule || 'Consultar con el proveedor'}</span>
+            </div>
+          </div>
+
+          {/* Last batch info */}
+          <div className="rc-detail-grid">
+            <div className="rc-detail-item">
+              <span className="rc-detail-label">Último pedido</span>
+              <span className="rc-detail-val">
+                {item.lastBatchReceivedDate
+                  ? <>{formatDate(item.lastBatchReceivedDate)} <span className="rc-detail-ago">({formatFmt(item.lastBatchReceivedDate)})</span></>
+                  : 'Sin registros'}
+              </span>
+            </div>
+            <div className="rc-detail-item">
+              <span className="rc-detail-label">Cantidad pedida</span>
+              <span className="rc-detail-val">
+                {item.lastBatchQuantity != null
+                  ? `${Number(item.lastBatchQuantity).toLocaleString('es-AR')} ${ul}`
+                  : '—'}
+              </span>
+            </div>
+            {item.supplierId && (
+              <div className="rc-detail-item">
+                <span className="rc-detail-label">Proveedor</span>
+                <span className="rc-detail-val">{item.supplierName}</span>
+              </div>
+            )}
+            <div className="rc-detail-item">
+              <span className="rc-detail-label">Producto ID</span>
+              <span className="rc-detail-val" style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>#{item.productId}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Summary strip ────────────────────────────────────────────────────────────
+function SummaryStrip({ items }) {
+  const counts = useMemo(() => {
+    const c = { critical: 0, high: 0, medium: 0, low: 0 };
+    items.forEach((i) => { c[urgency(i.stockPercentage)]++; });
+    return c;
+  }, [items]);
+
+  const pills = [
+    { key: 'critical', ...URGENCY_CONFIG.critical },
+    { key: 'high',     ...URGENCY_CONFIG.high     },
+    { key: 'medium',   ...URGENCY_CONFIG.medium   },
+    { key: 'low',      ...URGENCY_CONFIG.low      },
+  ].filter((p) => counts[p.key] > 0);
+
+  if (!pills.length) return null;
+
+  return (
+    <div className="ss-strip">
+      {pills.map((p) => (
+        <div key={p.key} className="ss-pill" style={{ color: p.color, background: p.bg }}>
+          <span className="ss-pill-icon">{p.icon}</span>
+          <span className="ss-pill-count">{counts[p.key]}</span>
+          <span className="ss-pill-label">{p.label}</span>
+        </div>
+      ))}
+      <style>{`
+        .ss-strip { display: flex; flex-wrap: wrap; gap: 7px; }
+        .ss-pill  {
+          display: flex; align-items: center; gap: 5px;
+          padding: 6px 13px; border-radius: 20px;
+          font-family: var(--font-body); font-size: 0.78rem;
+        }
+        .ss-pill-count { font-weight: 800; font-size: 1rem; line-height: 1; }
+        .ss-pill-label { font-weight: 600; }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function RestockPage() {
+  const dispatch    = useDispatch();
+  const navigate    = useNavigate();
+  const token       = useSelector(selectToken);
+  const user        = useSelector(selectUser);
+  const items       = useSelector(selectRestockItems);
+  const status      = useSelector(selectRestockStatus);
+  const error       = useSelector(selectRestockError);
+  const lastFetch   = useSelector(selectRestockLastFetch);
+
+  const [search,       setSearch]       = useState('');
+  const [filterOrigin, setFilterOrigin] = useState('');
+  const [expandAll,    setExpandAll]    = useState(false);
+
+  // Guard: redirect non-OWNER users
+  useEffect(() => {
+    if (user && user.role !== 'OWNER') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
+
+  // Fetch on mount
+  useEffect(() => {
+    if (!token) return;
+    dispatch(clearRestockState());
+    dispatch(fetchRestockSuggestions({ token }));
+  }, [token, dispatch]);
+
+  const refresh = () => {
+    dispatch(clearRestockState());
+    dispatch(fetchRestockSuggestions({ token }));
+  };
+
+  // Client-side filter
+  const filtered = useMemo(() => {
+    let list = [...items];
+    if (filterOrigin) list = list.filter((i) => i.origin === filterOrigin);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (i) =>
+          (i.productName   || '').toLowerCase().includes(q) ||
+          (i.categoryName  || '').toLowerCase().includes(q) ||
+          (i.supplierName  || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [items, search, filterOrigin]);
+
+  const isLoading = status === 'loading';
+
+  const lastFetchStr = lastFetch
+    ? new Date(lastFetch).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  // Only render for owners
+  if (user && user.role !== 'OWNER') return null;
+
+  return (
+    <div className="rp-page">
+      <AppTopbar />
+
+      <div className="rp-content">
+
+        {/* ── Header ── */}
+        <div className="rp-header">
+          <div className="rp-header-text">
+            <h1 className="rp-title">📋 Reposición de stock</h1>
+            <p className="rp-sub">
+              Productos por debajo del stock mínimo
+              {status === 'succeeded' && (
+                <> · <strong>{items.length}</strong> producto{items.length !== 1 ? 's' : ''} a reponer</>
+              )}
+              {lastFetchStr && (
+                <> · actualizado {lastFetchStr}</>
+              )}
+            </p>
+          </div>
+          <button
+            className="rp-refresh-btn"
+            onClick={refresh}
+            disabled={isLoading}
+            title="Actualizar sugerencias"
+          >
+            <span className={isLoading ? 'spin' : ''}>↻</span>
+          </button>
+        </div>
+
+        {/* ── Info banner ── */}
+        <div className="rp-info-banner">
+          <span>ℹ️</span>
+          <p>
+            Se muestran solo productos con <strong>stock mínimo configurado</strong> cuyo
+            inventario actual esté por debajo de ese mínimo. El porcentaje indica
+            cuánto stock disponible queda respecto al mínimo exigido.
+          </p>
+        </div>
+
+        {/* ── Error ── */}
+        {error && (
+          <div className="rp-error">⚠ {error}</div>
+        )}
+
+        {/* ── Loading ── */}
+        {isLoading && <TableSkeleton rows={5} />}
+
+        {/* ── Summary strip ── */}
+        {status === 'succeeded' && items.length > 0 && (
+          <SummaryStrip items={filtered.length ? filtered : items} />
+        )}
+
+        {/* ── Filters ── */}
+        {status === 'succeeded' && items.length > 0 && (
+          <div className="rp-controls">
+            <div className="rp-search-wrap">
+              <span className="rp-search-icon">🔍</span>
+              <input
+                className="rp-search"
+                placeholder="Buscar producto, categoría o proveedor..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search && (
+                <button className="rp-search-clear" onClick={() => setSearch('')}>✕</button>
+              )}
+            </div>
+
+            <select
+              className="rp-filter-sel"
+              value={filterOrigin}
+              onChange={(e) => setFilterOrigin(e.target.value)}
+            >
+              <option value="">Todos los orígenes</option>
+              <option value="FRANCHISE">🏷 Franquicia</option>
+              <option value="EXTERNAL">🌐 Externo</option>
+            </select>
+
+            <button
+              className="rp-expand-btn"
+              onClick={() => setExpandAll((v) => !v)}
+              title={expandAll ? 'Contraer todos' : 'Expandir todos'}
+            >
+              {expandAll ? '▲ Contraer' : '▼ Expandir'}
+            </button>
+          </div>
+        )}
+
+        {/* ── Empty state: all good ── */}
+        {status === 'succeeded' && items.length === 0 && (
+          <div className="rp-empty-ok">
+            <span className="rp-empty-icon">✅</span>
+            <h3 className="rp-empty-title">¡Todo en orden!</h3>
+            <p className="rp-empty-desc">
+              No hay productos por debajo del stock mínimo. El inventario está completo.
+            </p>
+            <button className="rp-btn-stock" onClick={() => navigate('/stock')}>
+              Ver inventario completo
+            </button>
+          </div>
+        )}
+
+        {/* ── Empty state: search/filter no results ── */}
+        {status === 'succeeded' && items.length > 0 && filtered.length === 0 && (
+          <div className="rp-empty-search">
+            <span>🔍</span>
+            <p>Sin resultados para los filtros aplicados.</p>
+            <button className="rp-btn-clear" onClick={() => { setSearch(''); setFilterOrigin(''); }}>
+              Limpiar filtros
+            </button>
+          </div>
+        )}
+
+        {/* ── Cards list ── */}
+        {status === 'succeeded' && filtered.length > 0 && (
+          <div className="rp-list">
+            {filtered.map((item, i) => (
+              <RestockCard
+                key={item.productId}
+                item={item}
+                index={i}
+                forceExpand={expandAll}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* ── Count ── */}
+        {status === 'succeeded' && filtered.length > 0 && (
+          <p className="rp-count">
+            {filtered.length} producto{filtered.length !== 1 ? 's' : ''}
+            {(search || filterOrigin) && ` · filtrado${filtered.length !== 1 ? 's' : ''}`}
+          </p>
+        )}
+
+        {/* ── Quick nav ── */}
+        {status === 'succeeded' && (
+          <div className="rp-quick-nav">
+            <button className="rp-nav-btn" onClick={() => navigate('/stock')}>
+              📦 Ver stock completo
+            </button>
+            <button className="rp-nav-btn" onClick={() => navigate('/products')}>
+              🥐 Editar productos
+            </button>
+            <button className="rp-nav-btn" onClick={() => navigate('/suppliers')}>
+              🚚 Ver proveedores
+            </button>
+          </div>
+        )}
+
+      </div>
+
+      <style>{`
+        .rp-page    { min-height: 100vh; background: var(--cream); }
+        .rp-content {
+          max-width: 860px; margin: 0 auto;
+          padding: var(--space-lg) var(--space-md);
+          display: flex; flex-direction: column; gap: var(--space-md);
+        }
+
+        /* Header */
+        .rp-header {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap;
+        }
+        .rp-title { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--espresso); margin-bottom: 4px; }
+        .rp-sub   { font-size: 0.84rem; color: var(--warm-gray); line-height: 1.5; }
+        .rp-refresh-btn {
+          width: 38px; height: 38px; background: white;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          color: var(--warm-gray); transition: all var(--transition-fast);
+        }
+        .rp-refresh-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+        .rp-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .spin { display: inline-block; animation: spin 0.7s linear infinite; }
+
+        /* Info banner */
+        .rp-info-banner {
+          display: flex; gap: 10px; align-items: flex-start;
+          padding: 11px 14px; border-radius: var(--radius-md);
+          background: rgba(200,137,58,0.07);
+          border: 1px solid rgba(200,137,58,0.22);
+        }
+        .rp-info-banner p { font-size: 0.8rem; color: var(--warm-gray); line-height: 1.5; margin: 0; }
+
+        .rp-error {
+          padding: 12px 16px; background: var(--error-light);
+          border: 1px solid var(--error); border-radius: var(--radius-md);
+          color: var(--error); font-size: 0.88rem;
+        }
+
+        /* Controls */
+        .rp-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .rp-search-wrap { position: relative; flex: 1; min-width: 180px; }
+        .rp-search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; pointer-events: none; }
+        .rp-search {
+          width: 100%; padding: 9px 34px;
+          font-family: var(--font-body); font-size: 0.86rem;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          background: white; color: var(--espresso); outline: none; box-sizing: border-box;
+          transition: border-color var(--transition-base);
+        }
+        .rp-search:focus { border-color: var(--amber); }
+        .rp-search-clear {
+          position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
+        }
+        .rp-filter-sel {
+          padding: 9px 12px; font-family: var(--font-body); font-size: 0.84rem;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          background: white; color: var(--espresso); outline: none;
+          cursor: pointer; -webkit-appearance: none;
+          transition: border-color var(--transition-base);
+        }
+        .rp-filter-sel:focus { border-color: var(--amber); }
+        .rp-expand-btn {
+          padding: 9px 14px; background: var(--cream-dark);
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
+          color: var(--warm-gray); cursor: pointer; white-space: nowrap;
+          transition: all var(--transition-fast);
+        }
+        .rp-expand-btn:hover { border-color: var(--amber); color: var(--espresso); }
+
+        /* Cards list */
+        .rp-list { display: flex; flex-direction: column; gap: 9px; }
+
+        /* ── RestockCard ── */
+        .rc-card {
+          background: white; border-radius: var(--radius-lg);
+          border: 1.5px solid var(--cream-dark);
+          box-shadow: var(--shadow-sm); overflow: hidden;
+          animation: fadeIn 0.3s ease both;
+          transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+        }
+        .rc-card:hover { box-shadow: var(--shadow-md); }
+        .rc-card.open  { border-color: var(--urg-color); }
+
+        .rc-header {
+          display: flex; align-items: stretch;
+          cursor: pointer; -webkit-tap-highlight-color: transparent;
+        }
+        .rc-urgency-bar { width: 4px; background: var(--urg-color); flex-shrink: 0; }
+        .rc-main { flex: 1; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+        .rc-row1 { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+        .rc-name-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+        .rc-name     { font-weight: 700; font-size: 0.96rem; color: var(--espresso); word-break: break-word; }
+        .rc-category { font-size: 0.74rem; color: var(--warm-gray); }
+        .rc-badge {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 10px; border-radius: 20px;
+          font-size: 0.72rem; font-weight: 700; flex-shrink: 0; white-space: nowrap;
+        }
+
+        .rc-bar-row { /* full width bar */ }
+
+        .rc-nums {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+          background: var(--cream); border-radius: var(--radius-md);
+          padding: 8px 12px;
+        }
+        .rc-num-item { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 80px; }
+        .rc-num-sep  { width: 1px; height: 28px; background: var(--cream-dark); flex-shrink: 0; margin: 0 4px; }
+        .rc-num-label {
+          font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.07em; color: var(--warm-gray-light);
+        }
+        .rc-num-val  { font-size: 0.88rem; font-weight: 700; color: var(--espresso); }
+
+        .rc-supplier-row {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+        }
+        .rc-origin-chip, .rc-supplier-chip {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 9px; border-radius: 20px;
+          font-size: 0.72rem; font-weight: 600; color: var(--warm-gray);
+        }
+        .rc-expand-icon { font-size: 0.65rem; color: var(--warm-gray-light); margin-left: auto; flex-shrink: 0; }
+
+        /* Detail section */
+        .rc-detail {
+          border-top: 1px solid var(--cream-dark);
+          background: var(--urg-bg, rgba(200,137,58,0.03));
+          padding: 14px 18px;
+          display: flex; flex-direction: column; gap: 12px;
+          animation: fadeIn 0.2s ease;
+        }
+
+        .rc-schedule {
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 10px 14px; border-radius: var(--radius-md);
+          background: white; border: 1.5px solid var(--urg-color, var(--amber));
+        }
+        .rc-schedule-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+        .rc-schedule-label {
+          display: block; font-size: 0.64rem; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.07em;
+          color: var(--warm-gray-light); margin-bottom: 3px;
+        }
+        .rc-schedule-val { display: block; font-size: 0.9rem; font-weight: 700; color: var(--espresso); }
+
+        .rc-detail-grid { display: flex; flex-wrap: wrap; gap: 14px; }
+        .rc-detail-item { display: flex; flex-direction: column; gap: 2px; min-width: 110px; flex: 1; }
+        .rc-detail-label {
+          font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.07em; color: var(--warm-gray-light);
+        }
+        .rc-detail-val   { font-size: 0.84rem; font-weight: 600; color: var(--espresso); }
+        .rc-detail-ago   { font-size: 0.72rem; color: var(--warm-gray); font-weight: 400; }
+
+        /* Empty states */
+        .rp-empty-ok {
+          display: flex; flex-direction: column; align-items: center;
+          gap: 14px; padding: 56px 24px; text-align: center;
+          background: white; border: 1px solid var(--cream-dark);
+          border-radius: var(--radius-xl); box-shadow: var(--shadow-sm);
+        }
+        .rp-empty-icon  { font-size: 3rem; }
+        .rp-empty-title { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; color: var(--espresso); }
+        .rp-empty-desc  { font-size: 0.85rem; color: var(--warm-gray); max-width: 320px; line-height: 1.6; }
+        .rp-btn-stock {
+          padding: 11px 22px; background: var(--espresso); color: var(--cream);
+          border: none; border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+          cursor: pointer; transition: all var(--transition-fast); box-shadow: var(--shadow-md);
+        }
+        .rp-btn-stock:hover { background: var(--espresso-mid); transform: translateY(-1px); }
+
+        .rp-empty-search {
+          display: flex; flex-direction: column; align-items: center;
+          gap: 10px; padding: 40px 24px; text-align: center;
+        }
+        .rp-empty-search > span { font-size: 2rem; opacity: 0.4; }
+        .rp-empty-search > p { font-family: var(--font-display); font-size: 0.95rem; font-weight: 700; color: var(--espresso); }
+        .rp-btn-clear {
+          padding: 8px 18px; background: var(--cream-dark); border: none;
+          border-radius: var(--radius-md); font-family: var(--font-body);
+          font-size: 0.84rem; font-weight: 600; color: var(--warm-gray);
+          cursor: pointer; transition: all var(--transition-fast);
+        }
+        .rp-btn-clear:hover { background: var(--cream-medium); color: var(--espresso); }
+
+        /* Count */
+        .rp-count { text-align: right; font-size: 0.75rem; color: var(--warm-gray-light); }
+
+        /* Quick nav */
+        .rp-quick-nav {
+          display: flex; flex-wrap: wrap; gap: 8px;
+          padding-top: var(--space-sm);
+          border-top: 1px solid var(--cream-dark);
+          margin-top: var(--space-sm);
+        }
+        .rp-nav-btn {
+          padding: 9px 16px; background: white;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.82rem; font-weight: 600;
+          color: var(--warm-gray); cursor: pointer; white-space: nowrap;
+          transition: all var(--transition-fast);
+        }
+        .rp-nav-btn:hover { border-color: var(--amber); color: var(--espresso); }
+
+        @media (max-width: 480px) {
+          .rp-content   { padding: var(--space-md) var(--space-sm); }
+          .rc-nums      { flex-direction: column; gap: 8px; }
+          .rc-num-sep   { display: none; }
+          .rc-num-item  { flex-direction: row; justify-content: space-between; min-width: unset; }
+          .rp-controls  { flex-direction: column; align-items: stretch; }
+          .rp-filter-sel { width: 100%; }
+          .rp-expand-btn { align-self: flex-start; }
+          .rc-detail-grid { gap: 10px; }
+          .rc-detail-item { min-width: 90px; }
+        }
+      `}</style>
+    </div>
+  );
+}
