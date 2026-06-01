@@ -12,6 +12,7 @@ import {
   supportsNotifications, supportsServiceWorker,
   getBrowserPermission,
 } from '../../features/notifications/useNotifications';
+import { selectUser } from '../../features/auth/authSlice';
 
 function fmt(ts) {
   if (!ts) return 'Nunca';
@@ -72,28 +73,87 @@ function Card({ title, right, disabled, children }) {
   );
 }
 
-function Stepper({ value, onChange, onBlur, onDec, onInc, min, max, disabled }) {
+function Stepper({ value, onChange, onBlur, onDec, onInc, min, max, disabled, label }) {
   const atMin = (parseInt(value) || 0) <= min;
   const atMax = (parseInt(value) || 0) >= max;
-  const btnBase = (dis) => ({
-    width:36, height:36, background:'#F7F3EE', border:'none',
-    cursor: dis ? 'not-allowed' : 'pointer', fontSize:'1rem', fontWeight:700, color:'#1C1108',
-    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
-    opacity: dis ? 0.4 : 1,
+
+  const btnStyle = (dis) => ({
+    width: 36,
+    height: 36,
+    flexShrink: 0,
+    background: 'white',
+    border: '1.5px solid #EDE6DB',
+    borderRadius: 8,
+    cursor: dis ? 'not-allowed' : 'pointer',
+    fontSize: '1.1rem',
+    fontWeight: 700,
+    color: dis ? '#C8BAB0' : '#1C1108',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s',
+    opacity: dis ? 0.45 : 1,
   });
+
   return (
-    <div style={{ display:'flex', alignItems:'center', border:'1.5px solid #EDE6DB', borderRadius:10, overflow:'hidden', background:'white' }}>
-      <button onClick={onDec} disabled={disabled || atMin}
-        style={{ ...btnBase(disabled || atMin), borderRight:'1px solid #EDE6DB' }}>−</button>
-      <input
-        type="number" value={value} onChange={e => onChange(e.target.value)}
-        onBlur={onBlur} disabled={disabled}
-        style={{ flex:1, height:36, border:'none', outline:'none', textAlign:'center',
-          fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, color:'#1C1108',
-          background:'white', minWidth:0, MozAppearance:'textfield' }}
-      />
-      <button onClick={onInc} disabled={disabled || atMax}
-        style={{ ...btnBase(disabled || atMax), borderLeft:'1px solid #EDE6DB' }}>+</button>
+    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'white',
+        border: '1.5px solid #EDE6DB',
+        borderRadius: 10,
+        padding: '4px 6px',
+      }}>
+        <button
+          onClick={onDec}
+          disabled={disabled || atMin}
+          style={btnStyle(disabled || atMin)}
+          type="button"
+        >
+          −
+        </button>
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          disabled={disabled}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            width: '100%',
+            border: 'none',
+            outline: 'none',
+            textAlign: 'center',
+            fontFamily: 'inherit',
+            fontSize: '1rem',
+            fontWeight: 700,
+            color: '#1C1108',
+            background: 'transparent',
+            MozAppearance: 'textfield',
+          }}
+        />
+        <button
+          onClick={onInc}
+          disabled={disabled || atMax}
+          style={btnStyle(disabled || atMax)}
+          type="button"
+        >
+          +
+        </button>
+      </div>
+      {label && (
+        <span style={{
+          textAlign: 'center',
+          fontSize: '0.68rem',
+          color: '#B5A898',
+          fontWeight: 500,
+        }}>
+          {label}
+        </span>
+      )}
     </div>
   );
 }
@@ -101,12 +161,15 @@ function Stepper({ value, onChange, onBlur, onDec, onInc, min, max, disabled }) 
 const IVLS = [5, 10, 15, 30, 60, 120, 240];
 
 export default function NotificationSettingsModal({ onClose, onRequestPermission, onTestNotification }) {
-  const dispatch  = useDispatch();
-  const enabled   = useSelector(selectNotifEnabled);
-  const channel   = useSelector(selectNotifChannel);
-  const interval  = useSelector(selectNotifInterval);
-  const daysAhead = useSelector(selectNotifDaysAhead);
-  const lastCheck = useSelector(selectLastCheckAt);
+  const dispatch   = useDispatch();
+  const user       = useSelector(selectUser);
+  const isOwner    = user?.role === 'OWNER';
+
+  const enabled    = useSelector(selectNotifEnabled);
+  const channel    = useSelector(selectNotifChannel);
+  const interval   = useSelector(selectNotifInterval);
+  const daysAhead  = useSelector(selectNotifDaysAhead);
+  const lastCheck  = useSelector(selectLastCheckAt);
 
   const [browserPerm, setBrowserPerm] = useState(() => getBrowserPermission());
   const bodyRef  = useRef(null);
@@ -126,7 +189,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const effCh = channel === 'auto' ? (isMobile ? 'push' : 'desktop') : channel;
 
-  /* ── Sync permiso cada 1.5s (macOS tarda en actualizar el estado) ──────── */
+  /* ── Sync permiso cada 1.5s ──────────────────────────────────────────────── */
   useEffect(() => {
     const real = getBrowserPermission();
     setBrowserPerm(real);
@@ -153,29 +216,48 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
   }, []);
 
   useEffect(() => {
-    const h = e => { if (e.key === 'Escape') onClose(); };
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
 
-  const applyDays = v => {
+  // Mantener lDays/lIvl sincronizados si cambian desde fuera (solo lectura para employees)
+  useEffect(() => { setLDays(String(daysAhead)); }, [daysAhead]);
+  useEffect(() => { setLIvl(String(interval));   }, [interval]);
+
+  const applyDays = (v) => {
+    if (!isOwner) return;
     const n = Math.max(1, Math.min(7, parseInt(v) || 2));
     setLDays(String(n));
     dispatch(setAlertDaysAhead(n));
   };
-  const applyIvl = v => {
+
+  const applyIvl = (v) => {
+    if (!isOwner) return;
     const n = Math.max(5, Math.min(240, parseInt(v) || 30));
     setLIvl(String(n));
     dispatch(setIntervalMinutes(n));
   };
-  const prevIvl = () => { const i = IVLS.indexOf(parseInt(lIvl)||30); applyIvl(i > 0 ? IVLS[i-1] : IVLS[0]); };
-  const nextIvl = () => { const i = IVLS.indexOf(parseInt(lIvl)||30); applyIvl(i < IVLS.length-1 ? IVLS[i+1] : IVLS[IVLS.length-1]); };
+
+  const prevIvl = () => {
+    const i = IVLS.indexOf(parseInt(lIvl) || 30);
+    applyIvl(i > 0 ? IVLS[i - 1] : IVLS[0]);
+  };
+  const nextIvl = () => {
+    const i = IVLS.indexOf(parseInt(lIvl) || 30);
+    applyIvl(i < IVLS.length - 1 ? IVLS[i + 1] : IVLS[IVLS.length - 1]);
+  };
 
   const ivlLabel = (() => {
     const v = parseInt(lIvl) || 30;
     if (v < 60) return `Cada ${v} min`;
     const h = Math.floor(v / 60), m = v % 60;
     return `Cada ${h}h${m > 0 ? ` ${m}min` : ''}`;
+  })();
+
+  const daysLabel = (() => {
+    const v = parseInt(lDays) || 2;
+    return `${v} día${v !== 1 ? 's' : ''} antes`;
   })();
 
   const handleReq = async () => {
@@ -196,10 +278,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
     dispatch(setEnabled(!enabled));
   };
 
-  /* ── Test de notificación ─────────────────────────────────────────────────
-     En macOS, intentamos primero el SW (vía postMessage) porque new Notification()
-     del hilo principal falla silenciosamente en macOS aunque el permiso esté "granted".
-     ────────────────────────────────────────────────────────────────────────── */
+  /* ── Test de notificación ──────────────────────────────────────────────────*/
   const handleTest = async () => {
     setTestErr('');
     if (!hasNotif) { setTestErr('Tu navegador no soporta notificaciones.'); return; }
@@ -211,7 +290,6 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
     const tag   = 'panstock-test';
     let shown   = false;
 
-    /* Intento 1: SW postMessage (prioritario en macOS) */
     if (hasSW) {
       try {
         let reg = await navigator.serviceWorker.getRegistration('/');
@@ -220,7 +298,6 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
           await navigator.serviceWorker.ready;
           reg = await navigator.serviceWorker.getRegistration('/');
         }
-
         const swTarget = reg?.active || reg?.waiting || reg?.installing;
         if (swTarget) {
           shown = await new Promise((resolve) => {
@@ -241,7 +318,6 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
       }
     }
 
-    /* Intento 2: reg.showNotification() directo */
     if (!shown && hasSW) {
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -254,7 +330,6 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
       }
     }
 
-    /* Intento 3: new Notification() — solo si NO es macOS */
     if (!shown && !onMac) {
       try {
         const n = new Notification(title, { body, icon: '/logo_panstock.png', tag, renotify: true });
@@ -281,7 +356,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const isNarrow = typeof window !== 'undefined' && window.innerWidth < 520;
 
-  /* ── Instrucciones específicas por plataforma para permisos denegados ───── */
+  /* ── Instrucciones para permisos denegados ──────────────────────────────── */
   const deniedInstructions = () => {
     if (onMac && onSafari) {
       return (
@@ -315,7 +390,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const content = (
     <div
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position:'fixed', inset:0, zIndex:9999,
         background:'rgba(28,17,8,0.65)', backdropFilter:'blur(6px)', WebkitBackdropFilter:'blur(6px)',
@@ -327,7 +402,8 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
         width:'100%', maxWidth:480, background:'#fff',
         borderRadius: isNarrow ? '24px 24px 0 0' : 24,
         boxShadow:'0 24px 80px rgba(28,17,8,0.30)',
-        maxHeight: isNarrow ? '92vh' : '88vh', display:'flex', flexDirection:'column', overflow:'hidden',
+        maxHeight: isNarrow ? '92vh' : '88vh',
+        display:'flex', flexDirection:'column', overflow:'hidden',
         fontFamily:'"DM Sans",system-ui,sans-serif',
       }}>
 
@@ -344,9 +420,13 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
               Alertas cuando productos estén próximos a vencer
             </div>
           </div>
-          <button onClick={onClose}
+          <button
+            onClick={onClose}
             style={{ width:30, height:30, borderRadius:8, background:'#F7F3EE', border:'none', cursor:'pointer', fontSize:'0.9rem', color:'#8C7B6B', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}
-            aria-label="Cerrar">✕</button>
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
         </div>
 
         <div ref={bodyRef} style={{ flex:1, overflowY:'auto', padding:'14px 18px', display:'flex', flexDirection:'column', gap:12, minHeight:0 }}>
@@ -365,10 +445,10 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             </div>
           </div>
 
-          {/* Nota específica macOS */}
+          {/* Nota macOS */}
           {onMac && (
             <AlertBox type="mac">
-              <strong>macOS:</strong> Las notificaciones se envían <strong>vía Service Worker</strong> (más confiable en macOS que <code>new Notification()</code>). Si no aparecen, verificá <strong>Preferencias del Sistema → Notificaciones</strong> y asegurate de que Chrome/Safari/Edge estén habilitados ahí también.
+              <strong>macOS:</strong> Las notificaciones se envían <strong>vía Service Worker</strong>. Si no aparecen, verificá <strong>Preferencias del Sistema → Notificaciones</strong> y asegurate de que Chrome/Safari/Edge estén habilitados.
             </AlertBox>
           )}
 
@@ -379,8 +459,10 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             {hasNotif && browserPerm === 'denied' && (
               <>
                 <AlertBox type="error">{deniedInstructions()}</AlertBox>
-                <button onClick={() => window.location.reload()}
-                  style={{ padding:'10px 18px', background:'transparent', color:'#C0392B', border:'1.5px solid #C0392B', borderRadius:10, fontFamily:'inherit', fontSize:'0.85rem', fontWeight:700, cursor:'pointer', width:'100%' }}>
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{ padding:'10px 18px', background:'transparent', color:'#C0392B', border:'1.5px solid #C0392B', borderRadius:10, fontFamily:'inherit', fontSize:'0.85rem', fontWeight:700, cursor:'pointer', width:'100%' }}
+                >
                   Recargar página tras habilitar en el navegador
                 </button>
               </>
@@ -399,29 +481,51 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
                     ? 'En macOS, el navegador pedirá permiso. También puede aparecer un diálogo del sistema operativo. Asegurate de aceptar ambos.'
                     : 'El navegador te pedirá permiso para mostrar notificaciones.'}
                 </AlertBox>
-                <button onClick={handleReq} disabled={req}
-                  style={{ padding:'12px 18px', background: req ? '#D4A853' : '#C8893A', color:'white', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, cursor: req ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', gap:8, boxShadow:'0 4px 16px rgba(200,137,58,0.35)', width:'100%', justifyContent:'center' }}>
+                <button
+                  onClick={handleReq}
+                  disabled={req}
+                  style={{ padding:'12px 18px', background: req ? '#D4A853' : '#C8893A', color:'white', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, cursor: req ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', gap:8, boxShadow:'0 4px 16px rgba(200,137,58,0.35)', width:'100%', justifyContent:'center' }}
+                >
                   {req ? 'Esperando respuesta...' : '🔔 Conceder permiso de notificaciones'}
                 </button>
               </>
             )}
           </Card>
 
-          {/* Toggle habilitado/deshabilitado */}
+          {/* Toggle activar/desactivar — ambos roles pueden hacerlo */}
           <Card>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
               <div>
                 <div style={{ fontSize:'0.92rem', fontWeight:700, color:'#1C1108', marginBottom:3 }}>Activar notificaciones</div>
                 <div style={{ fontSize:'0.75rem', color:'#8C7B6B', lineHeight:1.4 }}>
-                  {canToggle && enabled ? `Chequeará vencimientos cada ${lIvl} min` : 'Activá para recibir alertas de vencimiento'}
+                  {canToggle && enabled
+                    ? `Chequeará vencimientos ${ivlLabel.toLowerCase()}`
+                    : 'Activá para recibir alertas de vencimiento'}
                 </div>
               </div>
               <div
-                onClick={handleToggle} role="switch" aria-checked={enabled && canToggle} tabIndex={0}
-                onKeyDown={e => { if ((e.key===' '||e.key==='Enter') && canToggle) { e.preventDefault(); handleToggle(); } }}
-                style={{ width:52, height:30, borderRadius:15, background: canToggle && enabled ? '#C8893A' : '#EDE6DB', cursor: canToggle ? 'pointer' : 'not-allowed', position:'relative', flexShrink:0, transition:'background 0.25s', opacity: canToggle ? 1 : 0.45, outline:'none' }}
+                onClick={handleToggle}
+                role="switch"
+                aria-checked={enabled && canToggle}
+                tabIndex={0}
+                onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && canToggle) { e.preventDefault(); handleToggle(); } }}
+                style={{
+                  width:52, height:30, borderRadius:15,
+                  background: canToggle && enabled ? '#C8893A' : '#EDE6DB',
+                  cursor: canToggle ? 'pointer' : 'not-allowed',
+                  position:'relative', flexShrink:0,
+                  transition:'background 0.25s',
+                  opacity: canToggle ? 1 : 0.45,
+                  outline:'none',
+                }}
               >
-                <div style={{ position:'absolute', top:3, left: canToggle && enabled ? 25 : 3, width:24, height:24, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,0.25)', transition:'left 0.25s' }}/>
+                <div style={{
+                  position:'absolute', top:3,
+                  left: canToggle && enabled ? 25 : 3,
+                  width:24, height:24, borderRadius:'50%',
+                  background:'white', boxShadow:'0 1px 4px rgba(0,0,0,0.25)',
+                  transition:'left 0.25s',
+                }}/>
               </div>
             </div>
             {!canToggle && hasNotif && browserPerm === 'default' && (
@@ -432,16 +536,35 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             )}
           </Card>
 
-          {/* Canal */}
+          {/* Canal — ambos roles pueden verlo, solo OWNER puede cambiarlo */}
           <Card title="Canal de notificación" disabled={!enabled || !canToggle}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
               {[
                 { v:'auto',    ic: onMac ? '🍎' : '⚡', nm:'Automático', ds: onMac ? 'Detecta macOS → SW' : 'Detecta el dispositivo', ex: channel==='auto' ? `→ usando ${effCh==='push'?'Push':'escritorio'}` : null },
-                { v:'desktop', ic:'🖥️', nm:'Escritorio',  ds: onMac ? 'SW (recomendado macOS)' : 'Notifs. del sistema' },
-                { v:'push',    ic:'📱', nm:'Push',         ds:'Via Service Worker', na:!hasSW },
-              ].map(o => (
-                <label key={o.v} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'10px 7px', borderRadius:12, textAlign:'center', border:`2px solid ${channel===o.v ? '#C8893A' : '#EDE6DB'}`, background: channel===o.v ? 'rgba(200,137,58,0.05)' : 'white', cursor: (o.na||!enabled) ? 'not-allowed' : 'pointer', opacity: o.na ? 0.4 : 1, transition:'all 0.15s' }}>
-                  <input type="radio" name="ns-ch" value={o.v} checked={channel===o.v} onChange={() => dispatch(setChannel(o.v))} disabled={!enabled||o.na} style={{ display:'none' }}/>
+                { v:'desktop', ic:'🖥️', nm:'Escritorio', ds: onMac ? 'SW (recomendado macOS)' : 'Notifs. del sistema' },
+                { v:'push',    ic:'📱', nm:'Push',        ds:'Via Service Worker', na:!hasSW },
+              ].map((o) => (
+                <label
+                  key={o.v}
+                  style={{
+                    display:'flex', flexDirection:'column', alignItems:'center', gap:5,
+                    padding:'10px 7px', borderRadius:12, textAlign:'center',
+                    border:`2px solid ${channel===o.v ? '#C8893A' : '#EDE6DB'}`,
+                    background: channel===o.v ? 'rgba(200,137,58,0.05)' : 'white',
+                    cursor: (o.na || !enabled || !isOwner) ? 'not-allowed' : 'pointer',
+                    opacity: o.na ? 0.4 : 1,
+                    transition:'all 0.15s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="ns-ch"
+                    value={o.v}
+                    checked={channel===o.v}
+                    onChange={() => isOwner && dispatch(setChannel(o.v))}
+                    disabled={!enabled || o.na || !isOwner}
+                    style={{ display:'none' }}
+                  />
                   <span style={{ fontSize:'1.1rem' }}>{o.ic}</span>
                   <span style={{ fontSize:'0.73rem', fontWeight:700, color:'#1C1108' }}>{o.nm}</span>
                   <span style={{ fontSize:'0.62rem', color:'#8C7B6B', lineHeight:1.3 }}>{o.ds}</span>
@@ -450,25 +573,92 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
                 </label>
               ))}
             </div>
+            {!isOwner && (
+              <div style={{ fontSize:'0.72rem', color:'#B5A898', textAlign:'center', marginTop:2 }}>
+                🔒 Solo el dueño/encargado puede cambiar el canal
+              </div>
+            )}
           </Card>
 
-          {/* Configuración de tiempo */}
-          <Card title="Configuración de tiempo" disabled={!enabled || !canToggle}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              <div>
-                <div style={{ fontSize:'0.67rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8C7B6B', marginBottom:6 }}>Días anticipación</div>
-                <Stepper value={lDays} onChange={setLDays} onBlur={() => applyDays(lDays)}
-                  onDec={() => applyDays((parseInt(lDays)||2)-1)} onInc={() => applyDays((parseInt(lDays)||2)+1)}
-                  min={1} max={7} disabled={!enabled}/>
-                <div style={{ fontSize:'0.62rem', color:'#B5A898', marginTop:4 }}>1–7 días (recom: 2)</div>
+          {/* ── Configuración de tiempo — SOLO OWNER puede editar ── */}
+          <Card
+            title="Configuración de tiempo"
+            right={
+              !isOwner
+                ? <span style={{ fontSize:'0.65rem', color:'#B5A898', display:'flex', alignItems:'center', gap:4 }}>🔒 Solo Owner</span>
+                : null
+            }
+            disabled={!enabled || !canToggle}
+          >
+            {isOwner ? (
+              /* OWNER: steppers editables */
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+                <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                  <div style={{ fontSize:'0.67rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8C7B6B' }}>
+                    Días anticipación
+                  </div>
+                  <Stepper
+                    value={lDays}
+                    onChange={setLDays}
+                    onBlur={() => applyDays(lDays)}
+                    onDec={() => applyDays((parseInt(lDays) || 2) - 1)}
+                    onInc={() => applyDays((parseInt(lDays) || 2) + 1)}
+                    min={1}
+                    max={7}
+                    disabled={!enabled}
+                    label={daysLabel}
+                  />
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                  <div style={{ fontSize:'0.67rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8C7B6B' }}>
+                    Intervalo chequeo
+                  </div>
+                  <Stepper
+                    value={lIvl}
+                    onChange={setLIvl}
+                    onBlur={() => applyIvl(lIvl)}
+                    onDec={prevIvl}
+                    onInc={nextIvl}
+                    min={5}
+                    max={240}
+                    disabled={!enabled}
+                    label={ivlLabel}
+                  />
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize:'0.67rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'#8C7B6B', marginBottom:6 }}>Intervalo chequeo</div>
-                <Stepper value={lIvl} onChange={setLIvl} onBlur={() => applyIvl(lIvl)}
-                  onDec={prevIvl} onInc={nextIvl} min={5} max={240} disabled={!enabled}/>
-                <div style={{ fontSize:'0.62rem', color:'#B5A898', marginTop:4 }}>{ivlLabel}</div>
+            ) : (
+              /* EMPLOYEE: solo lectura, muestra los valores actuales */
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                  padding:'12px 8px', borderRadius:10,
+                  background:'white', border:'1.5px solid #EDE6DB',
+                }}>
+                  <div style={{ fontSize:'0.62rem', textTransform:'uppercase', letterSpacing:'0.07em', color:'#B5A898', fontWeight:600 }}>
+                    Días anticipación
+                  </div>
+                  <div style={{ fontSize:'1.4rem', fontWeight:800, color:'#1C1108', lineHeight:1 }}>
+                    {lDays}
+                  </div>
+                  <div style={{ fontSize:'0.68rem', color:'#8C7B6B' }}>{daysLabel}</div>
+                </div>
+                <div style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                  padding:'12px 8px', borderRadius:10,
+                  background:'white', border:'1.5px solid #EDE6DB',
+                }}>
+                  <div style={{ fontSize:'0.62rem', textTransform:'uppercase', letterSpacing:'0.07em', color:'#B5A898', fontWeight:600 }}>
+                    Intervalo chequeo
+                  </div>
+                  <div style={{ fontSize:'1.4rem', fontWeight:800, color:'#1C1108', lineHeight:1 }}>
+                    {lIvl}
+                    <span style={{ fontSize:'0.7rem', fontWeight:500, color:'#8C7B6B' }}> min</span>
+                  </div>
+                  <div style={{ fontSize:'0.68rem', color:'#8C7B6B' }}>{ivlLabel}</div>
+                </div>
               </div>
-            </div>
+            )}
+
             {lastCheck && (
               <div style={{ fontSize:'0.7rem', color:'#B5A898', padding:'5px 9px', borderRadius:8, background:'rgba(200,137,58,0.04)', border:'1px solid rgba(200,137,58,0.12)', marginTop:2 }}>
                 Último chequeo: {fmt(lastCheck)}
@@ -476,7 +666,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             )}
           </Card>
 
-          {/* Probar notificación */}
+          {/* Probar notificación — ambos roles */}
           {hasNotif && (
             <Card title="Probar notificación">
               {browserPerm !== 'granted' ? (
@@ -489,8 +679,20 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
                       : 'Enviá una notificación de prueba con datos de ejemplo.'}
                   </div>
                   {testErr && <AlertBox type="error">{testErr}</AlertBox>}
-                  <button onClick={handleTest} disabled={sent || browserPerm !== 'granted'}
-                    style={{ padding:'10px 18px', borderRadius:10, fontFamily:'inherit', fontSize:'0.86rem', fontWeight:600, cursor: sent ? 'default' : 'pointer', border: `2px solid ${sent ? '#2E7D32' : '#1C1108'}`, background: sent ? 'rgba(46,125,50,0.07)' : 'white', color: sent ? '#2E7D32' : '#1C1108', transition:'all 0.2s', alignSelf:'flex-start', display:'flex', alignItems:'center', gap:8 }}>
+                  <button
+                    onClick={handleTest}
+                    disabled={sent || browserPerm !== 'granted'}
+                    style={{
+                      padding:'10px 18px', borderRadius:10, fontFamily:'inherit',
+                      fontSize:'0.86rem', fontWeight:600,
+                      cursor: sent ? 'default' : 'pointer',
+                      border: `2px solid ${sent ? '#2E7D32' : '#1C1108'}`,
+                      background: sent ? 'rgba(46,125,50,0.07)' : 'white',
+                      color: sent ? '#2E7D32' : '#1C1108',
+                      transition:'all 0.2s', alignSelf:'flex-start',
+                      display:'flex', alignItems:'center', gap:8,
+                    }}
+                  >
                     {sent ? '✅ Notificación enviada' : '🧪 Enviar notificación de prueba'}
                   </button>
                 </>
@@ -500,7 +702,9 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
           {/* Soporte del navegador */}
           <div style={{ padding:'10px 13px', borderRadius:12, background:'#F7F3EE', border:'1px solid #EDE6DB' }}>
-            <div style={{ fontSize:'0.61rem', textTransform:'uppercase', letterSpacing:'0.08em', color:'#B5A898', fontWeight:600, marginBottom:7 }}>Soporte del navegador</div>
+            <div style={{ fontSize:'0.61rem', textTransform:'uppercase', letterSpacing:'0.08em', color:'#B5A898', fontWeight:600, marginBottom:7 }}>
+              Soporte del navegador
+            </div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
               {[
                 ['Notifications API', hasNotif, false],
@@ -515,15 +719,19 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
               ))}
             </div>
           </div>
+
         </div>
 
         {/* Footer */}
         <div style={{ padding:'12px 18px', borderTop:'1px solid #EDE6DB', flexShrink:0, display:'flex', justifyContent:'flex-end', background:'#fff' }}>
-          <button onClick={onClose}
-            style={{ padding:'10px 24px', background:'#1C1108', color:'#F7F3EE', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.88rem', fontWeight:600, cursor:'pointer' }}>
+          <button
+            onClick={onClose}
+            style={{ padding:'10px 24px', background:'#1C1108', color:'#F7F3EE', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.88rem', fontWeight:600, cursor:'pointer' }}
+          >
             Cerrar
           </button>
         </div>
+
       </div>
     </div>
   );
