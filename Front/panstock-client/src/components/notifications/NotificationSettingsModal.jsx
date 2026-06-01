@@ -8,7 +8,8 @@ import {
   syncPermission,
 } from '../../features/notifications/notificationsSlice';
 import {
-  isMobileDevice, supportsNotifications, supportsServiceWorker,
+  isMobileDevice, isMacOS, isSafari,
+  supportsNotifications, supportsServiceWorker,
   getBrowserPermission,
 } from '../../features/notifications/useNotifications';
 
@@ -44,6 +45,7 @@ function AlertBox({ type, children }) {
     error:   { bg:'rgba(192,57,43,0.08)',  color:'#A0392B', border:'1px solid rgba(192,57,43,0.3)'  },
     success: { bg:'rgba(46,125,50,0.08)',  color:'#1E6B24', border:'1px solid rgba(46,125,50,0.3)'  },
     info:    { bg:'rgba(21,101,192,0.08)', color:'#0D47A1', border:'1px solid rgba(21,101,192,0.3)' },
+    mac:     { bg:'rgba(88,86,214,0.08)',  color:'#3A38A0', border:'1px solid rgba(88,86,214,0.3)'  },
   }[type] || {};
   return (
     <div style={{ padding:'10px 12px', borderRadius:10, fontSize:'0.8rem', lineHeight:1.5, ...s }}>
@@ -108,6 +110,8 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const [browserPerm, setBrowserPerm] = useState(() => getBrowserPermission());
   const bodyRef  = useRef(null);
+  const onMac    = isMacOS();
+  const onSafari = isSafari();
   const isMobile = isMobileDevice();
   const hasNotif = supportsNotifications();
   const hasSW    = supportsServiceWorker();
@@ -122,6 +126,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const effCh = channel === 'auto' ? (isMobile ? 'push' : 'desktop') : channel;
 
+  /* ── Sync permiso cada 1.5s (macOS tarda en actualizar el estado) ──────── */
   useEffect(() => {
     const real = getBrowserPermission();
     setBrowserPerm(real);
@@ -133,7 +138,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
       const real = getBrowserPermission();
       setBrowserPerm(real);
       dispatch(syncPermission());
-    }, 1000);
+    }, 1500);
     return () => clearInterval(id);
   }, [dispatch]);
 
@@ -188,56 +193,125 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
   const handleToggle = () => {
     if (!canToggle) return;
-    const next = !enabled;
-    dispatch(setEnabled(next));
+    dispatch(setEnabled(!enabled));
   };
 
+  /* ── Test de notificación ─────────────────────────────────────────────────
+     En macOS, intentamos primero el SW (vía postMessage) porque new Notification()
+     del hilo principal falla silenciosamente en macOS aunque el permiso esté "granted".
+     ────────────────────────────────────────────────────────────────────────── */
   const handleTest = async () => {
     setTestErr('');
     if (!hasNotif) { setTestErr('Tu navegador no soporta notificaciones.'); return; }
     const realPerm = getBrowserPermission();
-    if (realPerm !== 'granted') { setTestErr('Primero concedé permiso (botón de arriba).'); return; }
+    if (realPerm !== 'granted') { setTestErr('Primero concedé permiso (sección de arriba).'); return; }
 
     const title = 'PanStock — Prueba de notificación';
     const body  = 'Categoría: Panadería\nVence: 31 de mayo de 2026\nCantidad en riesgo: 6 u.\n(Notificación de prueba)';
-    let shown = false;
+    const tag   = 'panstock-test';
+    let shown   = false;
 
-    try {
-      const n = new Notification(title, { body, icon: '/logo_panstock.png', tag: 'panstock-test', renotify: true });
-      n.onclick = () => { window.focus(); n.close(); };
-      shown = true;
-    } catch (e1) { console.warn('[PanStock Test] Notification API falló:', e1.message); }
-
-    if (!shown && hasSW) {
+    /* Intento 1: SW postMessage (prioritario en macOS) */
+    if (hasSW) {
       try {
-        const reg = await navigator.serviceWorker.getRegistration('/');
-        if (reg && reg.active) {
-          await reg.showNotification(title, { body, icon: '/logo_panstock.png', badge: '/logo_panstock.png', tag: 'panstock-test', renotify: true });
-          shown = true;
+        let reg = await navigator.serviceWorker.getRegistration('/');
+        if (!reg) {
+          reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          await navigator.serviceWorker.ready;
+          reg = await navigator.serviceWorker.getRegistration('/');
         }
-      } catch (e2) { console.warn('[PanStock Test] SW falló:', e2.message); }
+
+        const swTarget = reg?.active || reg?.waiting || reg?.installing;
+        if (swTarget) {
+          shown = await new Promise((resolve) => {
+            const timeout = setTimeout(() => resolve(false), 3000);
+            const handler = (event) => {
+              if (event.data?.type === 'NOTIFICATION_SENT' && event.data?.tag === tag) {
+                clearTimeout(timeout);
+                navigator.serviceWorker.removeEventListener('message', handler);
+                resolve(true);
+              }
+            };
+            navigator.serviceWorker.addEventListener('message', handler);
+            swTarget.postMessage({ type: 'SHOW_NOTIFICATION', title, body, tag, url: '/expiration', icon: '/logo_panstock.png' });
+          });
+        }
+      } catch (e1) {
+        console.warn('[PanStock Test] SW postMessage falló:', e1.message);
+      }
     }
 
+    /* Intento 2: reg.showNotification() directo */
     if (!shown && hasSW) {
       try {
-        const reg = await navigator.serviceWorker.getRegistration('/');
+        const reg = await navigator.serviceWorker.ready;
         if (reg) {
-          reg.active?.postMessage({ type: 'SHOW_NOTIFICATION', title, body, tag: 'panstock-test', url: '/expiration' });
+          await reg.showNotification(title, { body, icon: '/logo_panstock.png', badge: '/logo_panstock.png', tag, renotify: true });
           shown = true;
         }
-      } catch (_) {}
+      } catch (e2) {
+        console.warn('[PanStock Test] reg.showNotification falló:', e2.message);
+      }
+    }
+
+    /* Intento 3: new Notification() — solo si NO es macOS */
+    if (!shown && !onMac) {
+      try {
+        const n = new Notification(title, { body, icon: '/logo_panstock.png', tag, renotify: true });
+        n.onclick = () => { window.focus(); n.close(); };
+        shown = true;
+      } catch (e3) {
+        console.warn('[PanStock Test] new Notification() falló:', e3.message);
+      }
     }
 
     if (shown) {
       setSent(true);
       setTimeout(() => setSent(false), 3000);
     } else {
-      setTestErr('No se pudo enviar. Verificá los permisos en el navegador.');
+      setTestErr(
+        onMac
+          ? 'No se pudo enviar via Service Worker. En macOS, asegurate de que las notificaciones no estén bloqueadas en Preferencias del Sistema → Notificaciones.'
+          : 'No se pudo enviar. Verificá los permisos en el navegador.'
+      );
     }
+
     await onTestNotification?.();
   };
 
   const isNarrow = typeof window !== 'undefined' && window.innerWidth < 520;
+
+  /* ── Instrucciones específicas por plataforma para permisos denegados ───── */
+  const deniedInstructions = () => {
+    if (onMac && onSafari) {
+      return (
+        <>
+          Notificaciones bloqueadas en Safari macOS. Para habilitarlas:<br/>
+          <strong>Safari → Configuración → Sitios web → Notificaciones</strong> → buscá este sitio y seleccioná "Permitir".<br/>
+          O desde: <strong>Preferencias del Sistema → Notificaciones → Safari</strong>.<br/>
+          Luego recargá la página.
+        </>
+      );
+    }
+    if (onMac) {
+      return (
+        <>
+          Notificaciones bloqueadas en Chrome/Edge macOS. Para habilitarlas:<br/>
+          <strong>Chrome:</strong> clic en 🔒 en la barra → Notificaciones → Permitir<br/>
+          <strong>También verificá:</strong> Preferencias del Sistema → Notificaciones → Chrome/Edge → habilitar.<br/>
+          Luego recargá la página.
+        </>
+      );
+    }
+    return (
+      <>
+        Notificaciones bloqueadas. Para habilitarlas:<br/>
+        <strong>Chrome/Edge:</strong> clic en 🔒 → Notificaciones → Permitir<br/>
+        <strong>Firefox:</strong> clic en candado → Permiso de notificaciones → Permitir<br/>
+        Luego recargá la página.
+      </>
+    );
+  };
 
   const content = (
     <div
@@ -257,6 +331,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
         fontFamily:'"DM Sans",system-ui,sans-serif',
       }}>
 
+        {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'18px 18px 14px', borderBottom:'1px solid #EDE6DB', flexShrink:0 }}>
           <div style={{ width:40, height:40, borderRadius:12, background:'rgba(200,137,58,0.12)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.1rem', flexShrink:0 }}>
             🔔
@@ -276,30 +351,34 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
         <div ref={bodyRef} style={{ flex:1, overflowY:'auto', padding:'14px 18px', display:'flex', flexDirection:'column', gap:12, minHeight:0 }}>
 
+          {/* Dispositivo detectado */}
           <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 13px', borderRadius:12, background:'rgba(200,137,58,0.06)', border:'1px solid rgba(200,137,58,0.2)' }}>
-            <span style={{ fontSize:'1.3rem' }}>{isMobile ? '📱' : '🖥️'}</span>
+            <span style={{ fontSize:'1.3rem' }}>{isMobile ? '📱' : onMac ? '🍎' : '🖥️'}</span>
             <div>
               <div style={{ fontSize:'0.62rem', textTransform:'uppercase', letterSpacing:'0.07em', color:'#B5A898', fontWeight:600, marginBottom:2 }}>Dispositivo detectado</div>
               <div style={{ fontSize:'0.84rem', fontWeight:700, color:'#1C1108', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                {isMobile ? 'Móvil / Tablet' : 'Escritorio'}
+                {isMobile ? 'Móvil / Tablet' : onMac ? `macOS${onSafari ? ' · Safari' : ''}` : 'Escritorio'}
                 <span style={{ fontSize:'0.66rem', padding:'2px 7px', borderRadius:20, background:'rgba(200,137,58,0.15)', color:'#A06C28', fontWeight:600 }}>
-                  Recomendado: {isMobile ? 'Push' : 'Escritorio'}
+                  {isMobile ? 'vía Push (SW)' : onMac ? 'vía Service Worker' : 'vía escritorio'}
                 </span>
               </div>
             </div>
           </div>
 
+          {/* Nota específica macOS */}
+          {onMac && (
+            <AlertBox type="mac">
+              <strong>macOS:</strong> Las notificaciones se envían <strong>vía Service Worker</strong> (más confiable en macOS que <code>new Notification()</code>). Si no aparecen, verificá <strong>Preferencias del Sistema → Notificaciones</strong> y asegurate de que Chrome/Safari/Edge estén habilitados ahí también.
+            </AlertBox>
+          )}
+
+          {/* Permiso del navegador */}
           <Card title="Permiso del navegador" right={<PermBadge p={!hasNotif ? 'unsupported' : browserPerm} />}>
-            {!hasNotif && <AlertBox type="warning">Tu navegador no soporta notificaciones. Usá Chrome, Firefox o Safari.</AlertBox>}
+            {!hasNotif && <AlertBox type="warning">Tu navegador no soporta notificaciones. Usá Chrome, Firefox o Safari 16.4+.</AlertBox>}
 
             {hasNotif && browserPerm === 'denied' && (
               <>
-                <AlertBox type="error">
-                  Notificaciones bloqueadas. Para habilitarlas:<br/>
-                  <strong>Chrome/Edge:</strong> clic en 🔒 → Notificaciones → Permitir<br/>
-                  <strong>Firefox:</strong> clic en candado → Permiso de notificaciones → Permitir<br/>
-                  Luego recargá la página.
-                </AlertBox>
+                <AlertBox type="error">{deniedInstructions()}</AlertBox>
                 <button onClick={() => window.location.reload()}
                   style={{ padding:'10px 18px', background:'transparent', color:'#C0392B', border:'1.5px solid #C0392B', borderRadius:10, fontFamily:'inherit', fontSize:'0.85rem', fontWeight:700, cursor:'pointer', width:'100%' }}>
                   Recargar página tras habilitar en el navegador
@@ -309,23 +388,26 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
 
             {hasNotif && browserPerm === 'granted' && (
               <AlertBox type="success">
-                Permiso concedido. Las notificaciones están listas. Para revocar usá la configuración del navegador (🔒 en la barra de URL).
+                Permiso concedido. {onMac ? 'En macOS las notificaciones se enviarán vía Service Worker.' : 'Las notificaciones están listas.'} Para revocar usá la configuración del navegador.
               </AlertBox>
             )}
 
             {hasNotif && browserPerm === 'default' && (
               <>
                 <AlertBox type="info">
-                  El navegador te pedirá permiso para mostrar notificaciones. Al concederlo, las notificaciones se activarán automáticamente.
+                  {onMac
+                    ? 'En macOS, el navegador pedirá permiso. También puede aparecer un diálogo del sistema operativo. Asegurate de aceptar ambos.'
+                    : 'El navegador te pedirá permiso para mostrar notificaciones.'}
                 </AlertBox>
                 <button onClick={handleReq} disabled={req}
                   style={{ padding:'12px 18px', background: req ? '#D4A853' : '#C8893A', color:'white', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, cursor: req ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', gap:8, boxShadow:'0 4px 16px rgba(200,137,58,0.35)', width:'100%', justifyContent:'center' }}>
-                  {req ? 'Esperando respuesta del navegador...' : '🔔 Conceder permiso de notificaciones'}
+                  {req ? 'Esperando respuesta...' : '🔔 Conceder permiso de notificaciones'}
                 </button>
               </>
             )}
           </Card>
 
+          {/* Toggle habilitado/deshabilitado */}
           <Card>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
               <div>
@@ -343,18 +425,19 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
               </div>
             </div>
             {!canToggle && hasNotif && browserPerm === 'default' && (
-              <div style={{ fontSize:'0.74rem', color:'#D68910' }}>Concedé permiso (sección de arriba) para activar.</div>
+              <div style={{ fontSize:'0.74rem', color:'#D68910' }}>Concedé permiso primero.</div>
             )}
             {!canToggle && hasNotif && browserPerm === 'denied' && (
               <div style={{ fontSize:'0.74rem', color:'#C0392B' }}>Permisos bloqueados. Habilitálos desde el navegador.</div>
             )}
           </Card>
 
+          {/* Canal */}
           <Card title="Canal de notificación" disabled={!enabled || !canToggle}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
               {[
-                { v:'auto',    ic:'⚡', nm:'Automático', ds:'Detecta el dispositivo', ex: channel==='auto' ? `→ usando ${effCh==='push'?'Push':'Escritorio'}` : null },
-                { v:'desktop', ic:'🖥️', nm:'Escritorio',  ds:'Notifs. del sistema' },
+                { v:'auto',    ic: onMac ? '🍎' : '⚡', nm:'Automático', ds: onMac ? 'Detecta macOS → SW' : 'Detecta el dispositivo', ex: channel==='auto' ? `→ usando ${effCh==='push'?'Push':'escritorio'}` : null },
+                { v:'desktop', ic:'🖥️', nm:'Escritorio',  ds: onMac ? 'SW (recomendado macOS)' : 'Notifs. del sistema' },
                 { v:'push',    ic:'📱', nm:'Push',         ds:'Via Service Worker', na:!hasSW },
               ].map(o => (
                 <label key={o.v} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'10px 7px', borderRadius:12, textAlign:'center', border:`2px solid ${channel===o.v ? '#C8893A' : '#EDE6DB'}`, background: channel===o.v ? 'rgba(200,137,58,0.05)' : 'white', cursor: (o.na||!enabled) ? 'not-allowed' : 'pointer', opacity: o.na ? 0.4 : 1, transition:'all 0.15s' }}>
@@ -369,6 +452,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             </div>
           </Card>
 
+          {/* Configuración de tiempo */}
           <Card title="Configuración de tiempo" disabled={!enabled || !canToggle}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
               <div>
@@ -392,6 +476,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             )}
           </Card>
 
+          {/* Probar notificación */}
           {hasNotif && (
             <Card title="Probar notificación">
               {browserPerm !== 'granted' ? (
@@ -399,7 +484,9 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
               ) : (
                 <>
                   <div style={{ fontSize:'0.78rem', color:'#8C7B6B' }}>
-                    Enviá una notificación de prueba con datos de ejemplo.
+                    {onMac
+                      ? 'En macOS la prueba se envía vía Service Worker. Si no ves la notif, verificá Preferencias del Sistema → Notificaciones.'
+                      : 'Enviá una notificación de prueba con datos de ejemplo.'}
                   </div>
                   {testErr && <AlertBox type="error">{testErr}</AlertBox>}
                   <button onClick={handleTest} disabled={sent || browserPerm !== 'granted'}
@@ -411,14 +498,16 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
             </Card>
           )}
 
+          {/* Soporte del navegador */}
           <div style={{ padding:'10px 13px', borderRadius:12, background:'#F7F3EE', border:'1px solid #EDE6DB' }}>
             <div style={{ fontSize:'0.61rem', textTransform:'uppercase', letterSpacing:'0.08em', color:'#B5A898', fontWeight:600, marginBottom:7 }}>Soporte del navegador</div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
               {[
                 ['Notifications API', hasNotif, false],
                 ['Service Worker',    hasSW,    false],
-                [isMobile ? 'Móvil' : 'Escritorio', true, true],
-              ].map(([lbl, ok, info]) => (
+                [isMobile ? 'Móvil' : onMac ? 'macOS' : 'Escritorio', true, true],
+                onMac ? ['Modo SW (macOS)', hasSW, true] : null,
+              ].filter(Boolean).map(([lbl, ok, info]) => (
                 <div key={lbl} style={{ display:'flex', alignItems:'center', gap:5, fontSize:'0.73rem', color:'#8C7B6B' }}>
                   <span style={{ width:7, height:7, borderRadius:'50%', display:'inline-block', background: info ? '#1565C0' : ok ? '#2E7D32' : '#C0392B' }}/>
                   {lbl}
@@ -428,6 +517,7 @@ export default function NotificationSettingsModal({ onClose, onRequestPermission
           </div>
         </div>
 
+        {/* Footer */}
         <div style={{ padding:'12px 18px', borderTop:'1px solid #EDE6DB', flexShrink:0, display:'flex', justifyContent:'flex-end', background:'#fff' }}>
           <button onClick={onClose}
             style={{ padding:'10px 24px', background:'#1C1108', color:'#F7F3EE', border:'none', borderRadius:10, fontFamily:'inherit', fontSize:'0.88rem', fontWeight:600, cursor:'pointer' }}>

@@ -9,6 +9,7 @@ import {
   supportsNotifications,
   supportsServiceWorker,
   getBrowserPermission,
+  isMacOS,
 } from '../../features/notifications/useNotifications';
 import {
   selectExpiredCount,
@@ -27,8 +28,9 @@ export default function NotificationBell({ onRequestPermission }) {
 
   const [modalOpen, setModalOpen] = useState(false);
 
-  const urgentCount = expiredCount + redCount + yellowCount;
-  const browserPerm = getBrowserPermission();
+  const urgentCount  = expiredCount + redCount + yellowCount;
+  const browserPerm  = getBrowserPermission();
+  const onMac        = isMacOS();
 
   const iconColor = !supportsNotifications()
     ? '#B5A898'
@@ -41,29 +43,61 @@ export default function NotificationBell({ onRequestPermission }) {
   const tooltip = !supportsNotifications()
     ? 'Tu navegador no soporta notificaciones'
     : browserPerm === 'granted' && enabled
-      ? `Notificaciones activas · Alertando ${daysAhead} días antes`
+      ? `Notificaciones activas · Alertando ${daysAhead} días antes${onMac ? ' · macOS (SW)' : ''}`
       : browserPerm === 'denied'
         ? 'Notificaciones bloqueadas — clic para ver cómo habilitarlas'
         : 'Configurar notificaciones de vencimiento';
 
+  /* ── Test desde el bell — vía SW (confiable en macOS) ───────────────────── */
   const handleTestNotification = useCallback(async () => {
     if (!supportsNotifications() || Notification.permission !== 'granted') return;
-    const title = 'PanStock — Prueba de notificación';
+
+    const title = 'PanStock — Prueba';
     const body  = 'Categoría: Panadería\nVence: 31 de mayo de 2026\nCantidad en riesgo: 6 u.\n(Prueba)';
-    try {
-      const n = new Notification(title, { body, icon: '/logo_panstock.png', tag: 'panstock-test', renotify: true });
-      n.onclick = () => { window.focus(); n.close(); };
-      return;
-    } catch (_) {}
+    const tag   = 'panstock-test';
+
+    /* Prioridad 1: SW postMessage (macOS + todos) */
     if (supportsServiceWorker()) {
       try {
-        const reg = await navigator.serviceWorker.getRegistration('/');
-        if (reg?.active) {
-          await reg.showNotification(title, { body, icon: '/logo_panstock.png', tag: 'panstock-test' });
+        let reg = await navigator.serviceWorker.getRegistration('/');
+        if (!reg) {
+          reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          await navigator.serviceWorker.ready;
+          reg = await navigator.serviceWorker.getRegistration('/');
         }
-      } catch (err) { console.warn('[PanStock] Test SW error:', err); }
+        const swTarget = reg?.active || reg?.waiting || reg?.installing;
+        if (swTarget) {
+          swTarget.postMessage({ type: 'SHOW_NOTIFICATION', title, body, tag, url: '/expiration', icon: '/logo_panstock.png' });
+          return;
+        }
+      } catch (err) {
+        console.warn('[PanStock Bell] SW postMessage falló:', err.message);
+      }
     }
-  }, []);
+
+    /* Prioridad 2: reg.showNotification() */
+    if (supportsServiceWorker()) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg) {
+          await reg.showNotification(title, { body, icon: '/logo_panstock.png', tag, renotify: true });
+          return;
+        }
+      } catch (err) {
+        console.warn('[PanStock Bell] reg.showNotification falló:', err.message);
+      }
+    }
+
+    /* Prioridad 3: new Notification() — solo si NO es macOS */
+    if (!onMac) {
+      try {
+        const n = new Notification(title, { body, icon: '/logo_panstock.png', tag, renotify: true });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch (err) {
+        console.warn('[PanStock Bell] new Notification() falló:', err.message);
+      }
+    }
+  }, [onMac]);
 
   return (
     <>

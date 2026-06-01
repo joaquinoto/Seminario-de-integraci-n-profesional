@@ -7,25 +7,52 @@ import { store, persistor } from './store/store';
 import App from './App';
 import './index.css';
 
-// ── Registrar Service Worker para notificaciones push ────────────────────────
-// Lo hacemos aquí (fuera del árbol React) para que esté disponible lo antes
-// posible, independientemente de qué componente monte useNotifications primero.
+/* ────────────────────────────────────────────────────────────────────────────
+   SERVICE WORKER — registro temprano para que esté disponible antes de
+   que cualquier componente monte useNotifications.
+   
+   CRÍTICO para macOS:
+   1. Registramos en el evento 'load' (no inline) para no bloquear el parse.
+   2. Esperamos a que el SW llegue a estado 'activated' antes de declarar
+      el SW como listo. En macOS, el SW puede quedar en 'installing' o
+      'waiting' y showNotification() fallaría con InvalidStateError.
+   3. Si el SW estaba registrado pero en estado desactualizado (waiting),
+      le mandamos SKIP_WAITING para forzar la activación del nuevo.
+   ────────────────────────────────────────────────────────────────────────── */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then((reg) => {
-        // El hook useNotifications también hace su propia obtención del SW,
-        // pero al registrarlo aquí aseguramos que esté disponible antes
-        // de que cualquier componente lo necesite.
-        if (import.meta.env.DEV) {
-          console.log('[PanStock SW] Registrado:', reg.scope);
-        }
-      })
-      .catch((err) => {
-        if (import.meta.env.DEV) {
-          console.warn('[PanStock SW] Error al registrar:', err);
-        }
+  window.addEventListener('load', async () => {
+    try {
+      let reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+
+      if (import.meta.env.DEV) {
+        console.log('[PanStock SW] Registrado:', reg.scope);
+      }
+
+      if (reg.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            newWorker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
       });
+
+      await navigator.serviceWorker.ready;
+
+      if (import.meta.env.DEV) {
+        const activeSW = (await navigator.serviceWorker.getRegistration('/'))?.active;
+        console.log('[PanStock SW] Estado activo:', activeSW?.state);
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('[PanStock SW] Error al registrar:', err);
+      }
+    }
   });
 }
 
@@ -40,9 +67,9 @@ function LoadingScreen() {
       flexDirection: 'column',
       gap: '16px',
     }}>
-      <div>
-        <img src="/logo_panstock.png" alt="Logo" width="70" height="70" className="me-2"/>
-        <span className="logo-text">PanStock</span>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <img src="/logo_panstock.png" alt="Logo" width="70" height="70" />
+        <span style={{ fontFamily:'Georgia,serif', fontSize:'1.4rem', fontWeight:700, color:'#1C1108' }}>PanStock</span>
       </div>
       <div style={{
         width: 32, height: 32,
