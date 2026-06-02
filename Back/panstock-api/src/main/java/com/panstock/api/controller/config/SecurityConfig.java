@@ -97,6 +97,8 @@ public class SecurityConfig {
                     // ── Settings: OWNER only ──────────────────────────────────────────
                     .requestMatchers("/api/settings/**").hasAuthority(Role.OWNER.name())
 
+                    .requestMatchers("/actuator/**").permitAll()
+
                     // ── Anything else: authenticated ──────────────────────────────────
                     .anyRequest().authenticated()
             )
