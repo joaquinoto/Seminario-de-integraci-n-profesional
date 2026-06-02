@@ -1,36 +1,40 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    // Proxy para el backend durante el desarrollo
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8081',
-        changeOrigin: true,
-      },
-      '/auth': {
-        target: 'http://localhost:8081',
-        changeOrigin: true,
-      },
-      '/users': {
-        target: 'http://localhost:8081',
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    // El sw.js debe quedar en la raíz del dist, no procesado por Vite.
-    // Al estar en /public, Vite lo copia automáticamente sin transformar.
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+
+  return {
+    plugins: [react()],
+    server: {
+      port: 5173,
+      // Proxy para el backend durante el desarrollo
+      proxy: {
+        '/api': {
+          target: env.VITE_API_URL,
+          changeOrigin: true,
+        },
+        '/auth': {
+          target: env.VITE_API_URL,
+          changeOrigin: true,
+        },
+        '/users': {
+          target: env.VITE_API_URL,
+          changeOrigin: true,
+        },
       },
     },
-  },
-  // Asegura que /public/sw.js se sirva en la raíz durante dev
-  publicDir: 'public',
+    build: {
+      // El sw.js debe quedar en la raíz del dist, no procesado por Vite.
+      // Al estar en /public, Vite lo copia automáticamente sin transformar.
+      rollupOptions: {
+        output: {
+          manualChunks: undefined,
+        },
+      },
+    },
+    // Asegura que /public/sw.js se sirva en la raíz durante dev
+    publicDir: 'public',
+  };
 });
