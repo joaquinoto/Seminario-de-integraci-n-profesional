@@ -14,6 +14,7 @@ import stockReducer         from '../features/stock/stockSlice';
 import wasteReducer         from '../features/waste/wasteSlice';
 import notificationsReducer from '../features/notifications/notificationsSlice';
 import restockReducer       from '../features/stock/restockSlice';
+import promotionsReducer    from '../features/promotions/promotionsSlice';
 
 const authPersistConfig = {
   key: 'panstock-auth', storage,
@@ -57,6 +58,7 @@ const appReducer = combineReducers({
   waste:         persistReducer(wastePersistConfig,         wasteReducer),
   notifications: persistReducer(notificationsPersistConfig, notificationsReducer),
   restock:       restockReducer,
+  promotions:    promotionsReducer,// sin persist — siempre fresco del servidor
 });
 
 const rootReducer = (state, action) => {

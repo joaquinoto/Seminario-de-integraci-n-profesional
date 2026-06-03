@@ -82,8 +82,12 @@ public class SecurityConfig {
                     // ── Dashboard: OWNER + EMPLOYEE ──────────────────────────────────
                     .requestMatchers("/api/dashboard/**").authenticated()
 
-                    // ── Promotions: OWNER only ────────────────────────────────────────
-                    .requestMatchers("/api/promotions/**").hasAuthority(Role.OWNER.name())
+                    // ── Promotions ────────────────────────────────────────────────────
+                    // GET /api/promotions y GET /api/promotions/active → OWNER + EMPLOYEE
+                    // (los empleados necesitan ver las promociones activas)
+                    .requestMatchers(HttpMethod.GET, "/api/promotions/suggestions").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.GET, "/api/promotions").authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/promotions/active").authenticated()
 
                     // ── Reports: OWNER only ───────────────────────────────────────────
                     .requestMatchers("/api/reports/**").hasAuthority(Role.OWNER.name())

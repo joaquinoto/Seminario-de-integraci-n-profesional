@@ -13,6 +13,8 @@ import SuppliersPage   from './pages/SuppliersPage';
 import StockPage       from './pages/StockPage';
 import WastePage       from './pages/WastePage';
 import Restockpage     from './pages/RestockPage';
+import PromotionsPage  from './pages/PromotionsPage';
+
 /**
  * TokenGuard — verifica en cada render si el JWT del store sigue vigente.
  * Si expiró, hace logout automático y redirige al login.
@@ -47,7 +49,7 @@ export default function App() {
     <>
       <TokenGuard />
       <Routes>
-        {/* Rutas públicas */}
+        {/* ── Rutas públicas ─────────────────────────────────────────────── */}
         <Route
           path="/login"
           element={isAuth ? <Navigate to="/dashboard" replace /> : <LoginPage />}
@@ -57,16 +59,29 @@ export default function App() {
           element={isAuth ? <Navigate to="/dashboard" replace /> : <RegisterPage />}
         />
 
-        {/* Rutas protegidas — ambos roles (OWNER y EMPLOYEE) */}
-        <Route path="/dashboard"  element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/stock"      element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
-        <Route path="/waste"      element={<ProtectedRoute><WastePage /></ProtectedRoute>} />
-        <Route path="/expiration" element={<ProtectedRoute><ExpirationPage /></ProtectedRoute>} />
-        <Route path="/products"   element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
-        <Route path="/categories" element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
-        <Route path="/suppliers"  element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />
-        <Route path="/restock"   element={<ProtectedRoute requireRole="OWNER"><Restockpage /></ProtectedRoute>} />            
-        {/* Fallback */}
+        {/* ── Rutas protegidas — ambos roles (OWNER y EMPLOYEE) ──────────── */}
+        <Route path="/dashboard"   element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/stock"       element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
+        <Route path="/waste"       element={<ProtectedRoute><WastePage /></ProtectedRoute>} />
+        <Route path="/expiration"  element={<ProtectedRoute><ExpirationPage /></ProtectedRoute>} />
+        <Route path="/products"    element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
+        <Route path="/categories"  element={<ProtectedRoute><CategoriesPage /></ProtectedRoute>} />
+        <Route path="/suppliers"   element={<ProtectedRoute><SuppliersPage /></ProtectedRoute>} />
+
+        {/*
+          /promotions — accesible por OWNER y EMPLOYEE.
+          OWNER ve sugerencias + puede crear/cancelar.
+          EMPLOYEE solo ve las activas y el historial.
+        */}
+        <Route path="/promotions"  element={<ProtectedRoute><PromotionsPage /></ProtectedRoute>} />
+
+        {/* ── Rutas solo OWNER ──────────────────────────────────────────── */}
+        <Route
+          path="/restock"
+          element={<ProtectedRoute requireRole="OWNER"><Restockpage /></ProtectedRoute>}
+        />
+
+        {/* ── Fallback ──────────────────────────────────────────────────── */}
         <Route path="/"  element={<Navigate to={isAuth ? '/dashboard' : '/login'} replace />} />
         <Route path="*"  element={<Navigate to={isAuth ? '/dashboard' : '/login'} replace />} />
       </Routes>

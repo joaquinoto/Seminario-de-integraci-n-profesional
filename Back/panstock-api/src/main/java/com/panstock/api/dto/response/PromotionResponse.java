@@ -8,17 +8,35 @@ import java.time.LocalDateTime;
 
 public record PromotionResponse(
         Long id,
+
         Long productId,
         String productName,
+
         Long batchId,
+        java.time.LocalDate batchExpirationDate,
+        Long daysToExpire,
+        java.math.BigDecimal batchCurrentQuantity,
+
+        // Usuario que creó la promoción (puede ser null si es sugerencia del sistema)
+        Long createdById,
+        String createdByName,
+
         String title,
         String description,
+
         DiscountType discountType,
         BigDecimal discountPercentage,
         BigDecimal promotionalPrice,
+
+        // Precio original del producto/lote para calcular ahorro
+        BigDecimal originalPrice,
+
         LocalDateTime startDate,
         LocalDateTime endDate,
+
         PromotionStatus status,
-        Boolean suggestedBySystem
+        Boolean suggestedBySystem,
+
+        LocalDateTime createdAt
 ) {
 }
