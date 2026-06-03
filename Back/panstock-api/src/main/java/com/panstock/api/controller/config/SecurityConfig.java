@@ -71,12 +71,6 @@ public class SecurityConfig {
                     .requestMatchers("/api/stock/**").authenticated()
 
                     // ── Restock suggestions: OWNER only ──────────────────────────────
-                    // NOTE: this is a sub-path of /api/stock/** so the authenticated()
-                    // rule above covers the base, but we add an explicit OWNER guard.
-                    // Spring Security evaluates rules in order — place OWNER rule BEFORE
-                    // the generic authenticated() rule for /api/stock/**.
-                    // The ordering is handled below by placing this before the stock catch-all.
-                    // (Re-declared explicitly for clarity; Spring uses first-match.)
                     .requestMatchers(HttpMethod.GET, "/api/stock/restock-suggestions").hasAuthority(Role.OWNER.name())
 
                     // ── Waste records: OWNER + EMPLOYEE ───────────────────────────────
