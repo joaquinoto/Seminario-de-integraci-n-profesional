@@ -29,9 +29,8 @@ export function Modal({ isOpen, onClose, title, children, width = '520px' }) {
             </svg>
           </button>
         </div>
-      
-        <div className="modal-body"  >{children}</div>
-        
+
+        <div className="modal-body">{children}</div>
       </div>
 
       <style>{`
@@ -45,17 +44,24 @@ export function Modal({ isOpen, onClose, title, children, width = '520px' }) {
         }
         .modal-box {
           width: 100%;
+          /* Clave: altura máxima relativa al viewport para que el scroll funcione */
+          max-height: calc(100vh - 32px);
           background: #fff;
           border-radius: var(--radius-xl);
           box-shadow: 0 32px 80px rgba(28,17,8,0.22);
           border: 1px solid rgba(200,137,58,0.12);
           animation: scaleIn 0.25s ease;
           overflow: hidden;
+          /* Flexbox para que header quede fijo y body haga scroll */
+          display: flex;
+          flex-direction: column;
         }
         .modal-header {
           display: flex; align-items: center; justify-content: space-between;
           padding: 20px 24px 16px;
           border-bottom: 1px solid var(--cream-dark);
+          /* Header siempre visible, no participa del scroll */
+          flex-shrink: 0;
         }
         .modal-title {
           font-family: var(--font-display);
@@ -69,9 +75,27 @@ export function Modal({ isOpen, onClose, title, children, width = '520px' }) {
           display: flex; align-items: center; justify-content: center;
           color: var(--warm-gray);
           transition: background var(--transition-fast), color var(--transition-fast);
+          flex-shrink: 0;
         }
         .modal-close:hover { background: var(--cream-dark); color: var(--espresso); }
-        .modal-body {padding:24px;}
+        .modal-body {
+          padding: 24px;
+          /* El body ocupa el espacio restante y hace scroll cuando el contenido es largo */
+          overflow-y: auto;
+          flex: 1;
+          /* Scroll suave en iOS */
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* En pantallas muy pequeñas el modal ocupa casi toda la altura */
+        @media (max-width: 480px) {
+          .modal-backdrop { padding: 8px; align-items: flex-end; }
+          .modal-box {
+            max-height: calc(100vh - 16px);
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+          }
+        }
       `}</style>
     </div>
   );
