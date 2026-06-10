@@ -534,11 +534,6 @@ INSERT INTO waste_records
     (product_id, batch_id, created_by_id, quantity, reason,
      waste_date, unit_cost, unit_sale_price, economic_loss, notes, created_at)
 VALUES
--- Lorena descarta 2 alfajores sin TACC vencidos
-(301, 9, 1, 2.000, 'EXPIRED',
- DATE_SUB(NOW(), INTERVAL 5 DAY),
- NULL, 2800.00, 5600.00,
- 'Dos alfajores sin TACC encontrados vencidos en mostrador.', NOW()),
 
 -- Gabriel descarta 3 alfajores 70 dañados
 (401, 10, 2, 3.000, 'DAMAGED',
@@ -557,12 +552,6 @@ VALUES
  DATE_SUB(NOW(), INTERVAL 2 DAY),
  NULL, 1500.00, 3000.00,
  'Consumo interno del turno mañana.', NOW()),
-
--- Martina: descarta 5 litros de leche vencida (agota el lote 21 → DEPLETED)
-(504, 21, 3, 5.000, 'EXPIRED',
- DATE_SUB(NOW(), INTERVAL 1 DAY),
- NULL, 0.00, 0.00,
- 'Leche del lote 21 vencida. Se descarta por completo.', NOW()),
 
 -- Gabriel: 1 alfajor sin TACC por otro motivo
 (301, 9, 2, 1.000, 'OTHER',

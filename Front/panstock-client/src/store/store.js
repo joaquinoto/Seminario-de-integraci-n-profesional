@@ -20,20 +20,29 @@ const authPersistConfig = {
   key: 'panstock-auth', storage,
   whitelist: ['token', 'user', 'isAuthenticated'],
 };
+
 const categoriesPersistConfig = {
   key: 'panstock-categories', storage,
   whitelist: ['items'],
 };
+
 const productsPersistConfig = {
   key: 'panstock-products', storage,
   whitelist: ['items'],
 };
+
 const suppliersPersistConfig = {
   key: 'panstock-suppliers', storage,
   whitelist: ['items'],
 };
+
 const wastePersistConfig = {
   key: 'panstock-waste', storage,
+  // Solo se persiste 'users' (lista de usuarios para el filtro de mermas).
+  // autoWasteCompleted fue eliminado: persistirlo causaba que lotes cuyo
+  // auto-descarte había fallado nunca se reintentaran al recargar la página.
+  // La idempotencia del auto-descarte la garantiza el backend (si el lote
+  // ya está DEPLETED devuelve 400 y el frontend lo ignora silenciosamente).
   whitelist: ['users'],
 };
 
@@ -58,11 +67,12 @@ const appReducer = combineReducers({
   waste:         persistReducer(wastePersistConfig,         wasteReducer),
   notifications: persistReducer(notificationsPersistConfig, notificationsReducer),
   restock:       restockReducer,
-  promotions:    promotionsReducer,// sin persist — siempre fresco del servidor
+  promotions:    promotionsReducer,
 });
 
 const rootReducer = (state, action) => {
   if (action.type === 'auth/logout') {
+    // Al cerrar sesión limpiamos todo excepto auth y notifications.
     const { auth, notifications } = state;
     return appReducer({ auth, notifications }, action);
   }

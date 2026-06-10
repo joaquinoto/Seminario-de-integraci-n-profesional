@@ -16,6 +16,10 @@ import {
 import {
   fetchBatches,
 } from '../features/stock/stockSlice';
+import {
+  fetchSemaphore,
+  clearExpirationState,
+} from '../features/stock/expirationSlice';
 import { fetchCategories, selectCategories } from '../features/catalog/categoriesSlice';
 import { fetchSuppliers, selectSuppliers }   from '../features/catalog/suppliersSlice';
 import { selectToken, selectUser }           from '../features/auth/authSlice';
@@ -30,14 +34,14 @@ const REASON_CONFIG = {
   DAMAGED:              { label: 'Dañado / Roto',    color: '#E67E22', bg: 'rgba(230,126,34,0.09)', icon: '💥' },
   INTERNAL_CONSUMPTION: { label: 'Consumo interno',  color: '#2980B9', bg: 'rgba(41,128,185,0.09)', icon: '🍽' },
   QUALITY_ISSUE:        { label: 'Calidad',           color: '#8E44AD', bg: 'rgba(142,68,173,0.09)', icon: '⚠️' },
-  OTHER:                { label: 'Otro',              color: '#7F8C8D', bg: 'rgba(127,140,141,0.09)',icon: '📝' },
+  OTHER:                { label: 'Otro',              color: '#7F8C8D', bg: 'rgba(127,140,141,0.09)', icon: '📝' },
 };
 
 const QUICK_RANGES = [
-  { label: 'Hoy',        days: 0  },
-  { label: 'Últimos 7d', days: 7  },
-  { label: 'Últimos 30d',days: 30 },
-  { label: 'Este mes',   days: -1 },
+  { label: 'Hoy',         days: 0  },
+  { label: 'Últimos 7d',  days: 7  },
+  { label: 'Últimos 30d', days: 30 },
+  { label: 'Este mes',    days: -1 },
 ];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -59,7 +63,7 @@ const formatDateTime = (dt) => {
 
 const isoDate = (d) => d.toISOString().split('T')[0];
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── ReasonBadge ─────────────────────────────────────────────────────────────
 
 function ReasonBadge({ reason }) {
   const cfg = REASON_CONFIG[reason] || REASON_CONFIG.OTHER;
@@ -75,17 +79,19 @@ function ReasonBadge({ reason }) {
   );
 }
 
+// ─── StatCard ─────────────────────────────────────────────────────────────────
+
 function StatCard({ label, value, color, sub }) {
   return (
     <div className="stat-card">
       <span className="stat-card-label">{label}</span>
-      <span className="stat-card-value" style={color ? { color } : {}}>
-        {value}
-      </span>
+      <span className="stat-card-value" style={color ? { color } : {}}>{value}</span>
       {sub && <span className="stat-card-sub">{sub}</span>}
     </div>
   );
 }
+
+// ─── BreakdownBar ─────────────────────────────────────────────────────────────
 
 function BreakdownBar({ items, total, colorFn }) {
   if (!items.length) return <p style={{ color: 'var(--warm-gray)', fontSize: '0.84rem' }}>Sin datos</p>;
@@ -104,13 +110,8 @@ function BreakdownBar({ items, total, colorFn }) {
               </span>
             </div>
             <div className="breakdown-bar-wrap">
-              <div
-                className="breakdown-bar-fill"
-                style={{
-                  width: `${pct}%`,
-                  background: colorFn ? colorFn(i) : 'var(--amber)',
-                }}
-              />
+              <div className="breakdown-bar-fill"
+                style={{ width: `${pct}%`, background: colorFn ? colorFn(i) : 'var(--amber)' }} />
               <span className="breakdown-pct">{pct}%</span>
             </div>
           </div>
@@ -120,10 +121,15 @@ function BreakdownBar({ items, total, colorFn }) {
   );
 }
 
-/** Row de una merma individual (expandible) */
+// ─── WasteRow ─────────────────────────────────────────────────────────────────
+//
+// Si createdByName === null → el registro fue hecho por el sistema automático.
+// En ese caso mostramos el badge rojo "Descartar lote vencido" que pide el enunciado.
+
 function WasteRow({ record, idx }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = REASON_CONFIG[record.reason] || REASON_CONFIG.OTHER;
+  const isAutomatic = !record.createdByName && !record.createdById;
 
   return (
     <div className="wr-wrap" style={{ animationDelay: `${idx * 0.025}s` }}>
@@ -136,6 +142,13 @@ function WasteRow({ record, idx }) {
         <div className="wr-indicator" style={{ background: cfg.color }} />
 
         <div className="wr-body">
+          {/* ── Badge automático — visible para ambos roles ── */}
+          {isAutomatic && (
+            <div className="wr-auto-badge">
+              🗑️ Descartar lote vencido
+            </div>
+          )}
+
           <div className="wr-top">
             <div className="wr-left">
               <span className="wr-product">{record.productName}</span>
@@ -160,16 +173,15 @@ function WasteRow({ record, idx }) {
             >
               {formatARS(record.economicLoss)}
             </span>
-            {/* ── Quién registró — siempre visible ── */}
-            {record.createdByName ? (
+            {isAutomatic ? (
+              <span className="wr-author-system">🤖 Sistema automático</span>
+            ) : (
               <span className="wr-author">
                 <span className="wr-author-avatar">
                   {record.createdByName.charAt(0).toUpperCase()}
                 </span>
                 {record.createdByName}
               </span>
-            ) : (
-              <span className="wr-author wr-author-unknown">Sin usuario asignado</span>
             )}
             <span className="wr-expand-icon">{expanded ? '▲' : '▼'}</span>
           </div>
@@ -203,13 +215,18 @@ function WasteRow({ record, idx }) {
             </div>
             <div className="wrd-item">
               <span className="wrd-label">Registrado por</span>
-              <span style={{ fontWeight: 600, color: 'var(--espresso)' }}>
-                {record.createdByName || '—'}
-                {record.createdById && (
-                  <span style={{ color: 'var(--warm-gray)', fontWeight: 400, fontSize: '0.78rem' }}>
-                    {' '}(ID #{record.createdById})
-                  </span>
-                )}
+              <span style={{ fontWeight: 600, color: isAutomatic ? '#C0392B' : 'var(--espresso)' }}>
+                {isAutomatic
+                  ? '🤖 Sistema automático'
+                  : <>
+                      {record.createdByName}
+                      {record.createdById && (
+                        <span style={{ color: 'var(--warm-gray)', fontWeight: 400, fontSize: '0.78rem' }}>
+                          {' '}(ID #{record.createdById})
+                        </span>
+                      )}
+                    </>
+                }
               </span>
             </div>
           </div>
@@ -244,14 +261,13 @@ export default function WastePage() {
   const [activeView,  setActiveView]  = useState('list');
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // ── Initial load ─────────────────────────────────────────────────────────
+  // ── Carga inicial ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
     loadRecords();
     dispatch(fetchCategories({ token, activeOnly: false }));
     dispatch(fetchSuppliers({ token, params: {} }));
     dispatch(fetchBatches({ token }));
-    // Solo el OWNER puede ver todos los usuarios
     if (isOwner && usersStatus === 'idle') {
       dispatch(fetchUsers({ token }));
     }
@@ -301,24 +317,35 @@ export default function WastePage() {
     dispatch(fetchWasteRecords({ token, params: { ...newFilters } }));
   };
 
+  // ── handleFormSuccess ─────────────────────────────────────────────────────
+  // Tras registrar una merma manual: recarga lista + lotes + semáforo.
+  const handleFormSuccess = useCallback(() => {
+    setModalOpen(false);
+    loadRecords();
+    dispatch(fetchBatches({ token }));
+    // Refrescar semáforo para que /expiration refleje el cambio
+    dispatch(clearExpirationState());
+    dispatch(fetchSemaphore({ token }));
+  }, [dispatch, token, loadRecords]);
+
   // ── Búsqueda local ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     if (!search.trim()) return records;
     const q = search.trim().toLowerCase();
     return records.filter(
       (r) =>
-        (r.productName     || '').toLowerCase().includes(q) ||
-        (r.categoryName    || '').toLowerCase().includes(q) ||
-        (r.supplierName    || '').toLowerCase().includes(q) ||
-        (r.createdByName   || '').toLowerCase().includes(q) ||
-        (r.notes           || '').toLowerCase().includes(q)
+        (r.productName   || '').toLowerCase().includes(q) ||
+        (r.categoryName  || '').toLowerCase().includes(q) ||
+        (r.supplierName  || '').toLowerCase().includes(q) ||
+        (r.createdByName || '').toLowerCase().includes(q) ||
+        (r.notes         || '').toLowerCase().includes(q)
     );
   }, [records, search]);
 
   // ── Estadísticas ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const totalQty  = filtered.reduce((s, r) => s + Number(r.quantity       || 0), 0);
-    const totalLoss = filtered.reduce((s, r) => s + Number(r.economicLoss   || 0), 0);
+    const totalQty  = filtered.reduce((s, r) => s + Number(r.quantity     || 0), 0);
+    const totalLoss = filtered.reduce((s, r) => s + Number(r.economicLoss || 0), 0);
     const count     = filtered.length;
 
     const accumulate = (keyFn, nameFn, items) => {
@@ -349,10 +376,10 @@ export default function WastePage() {
       (r) => REASON_CONFIG[r.reason]?.label || r.reason || 'Otro',
       filtered
     );
-    const userItems   = Object.values(
+    const userItems = Object.values(
       filtered.reduce((map, r) => {
-        const key  = r.createdById   || 'anon';
-        const name = r.createdByName || 'Sin asignar';
+        const key  = r.createdById   || 'sistema';
+        const name = r.createdByName || '🤖 Sistema automático';
         if (!map[key]) map[key] = { name, loss: 0, qty: 0, count: 0 };
         map[key].loss  += Number(r.economicLoss || 0);
         map[key].qty   += Number(r.quantity     || 0);
@@ -364,16 +391,9 @@ export default function WastePage() {
     return { count, totalQty, totalLoss, catItems, suppItems, reasonItems, userItems };
   }, [filtered]);
 
-  const handleFormSuccess = () => {
-    setModalOpen(false);
-    loadRecords();
-    dispatch(fetchBatches({ token }));
-  };
-
   const hasFilters = filters.from || filters.to || filters.categoryId
                   || filters.supplierId || filters.reason || filters.createdById;
-
-  const isLoading = listStatus === 'loading';
+  const isLoading  = listStatus === 'loading';
 
   const CAT_COLORS  = ['#C8893A','#D4A853','#8B6914','#5C8A4A','#4A7A8A','#7A5C8A'];
   const SUPP_COLORS = ['#1565C0','#2E7D32','#6A1B9A','#0097A7','#E65100','#558B2F'];
@@ -407,10 +427,7 @@ export default function WastePage() {
             >
               ↻
             </button>
-            <button
-              className="wp-btn-new"
-              onClick={() => setModalOpen(true)}
-            >
+            <button className="wp-btn-new" onClick={() => setModalOpen(true)}>
               + Registrar merma
             </button>
           </div>
@@ -419,11 +436,7 @@ export default function WastePage() {
         {/* ── Rangos rápidos ── */}
         <div className="wp-quick-ranges">
           {QUICK_RANGES.map((r) => (
-            <button
-              key={r.label}
-              className="wp-range-chip"
-              onClick={() => applyQuickRange(r.days)}
-            >
+            <button key={r.label} className="wp-range-chip" onClick={() => applyQuickRange(r.days)}>
               {r.label}
             </button>
           ))}
@@ -454,9 +467,7 @@ export default function WastePage() {
                 <div className="wp-filter-row">
                   <div className="wp-filter-field">
                     <label className="wp-field-label">Desde</label>
-                    <input
-                      type="date"
-                      className="wp-date-input"
+                    <input type="date" className="wp-date-input"
                       value={filters.from}
                       onChange={(e) => dispatch(setWasteFilters({ from: e.target.value }))}
                       max={filters.to || undefined}
@@ -464,9 +475,7 @@ export default function WastePage() {
                   </div>
                   <div className="wp-filter-field">
                     <label className="wp-field-label">Hasta</label>
-                    <input
-                      type="date"
-                      className="wp-date-input"
+                    <input type="date" className="wp-date-input"
                       value={filters.to}
                       onChange={(e) => dispatch(setWasteFilters({ to: e.target.value }))}
                       min={filters.from || undefined}
@@ -478,41 +487,28 @@ export default function WastePage() {
               {/* Categoría */}
               <div className="wp-filter-group">
                 <span className="wp-filter-group-label">🗂 Categoría</span>
-                <select
-                  className="wp-select"
-                  value={filters.categoryId}
-                  onChange={(e) => dispatch(setWasteFilters({ categoryId: e.target.value }))}
-                >
+                <select className="wp-select" value={filters.categoryId}
+                  onChange={(e) => dispatch(setWasteFilters({ categoryId: e.target.value }))}>
                   <option value="">Todas las categorías</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
 
               {/* Proveedor */}
               <div className="wp-filter-group">
                 <span className="wp-filter-group-label">🚚 Proveedor</span>
-                <select
-                  className="wp-select"
-                  value={filters.supplierId}
-                  onChange={(e) => dispatch(setWasteFilters({ supplierId: e.target.value }))}
-                >
+                <select className="wp-select" value={filters.supplierId}
+                  onChange={(e) => dispatch(setWasteFilters({ supplierId: e.target.value }))}>
                   <option value="">Todos los proveedores</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
 
               {/* Motivo */}
               <div className="wp-filter-group">
                 <span className="wp-filter-group-label">⚠️ Motivo</span>
-                <select
-                  className="wp-select"
-                  value={filters.reason}
-                  onChange={(e) => dispatch(setWasteFilters({ reason: e.target.value }))}
-                >
+                <select className="wp-select" value={filters.reason}
+                  onChange={(e) => dispatch(setWasteFilters({ reason: e.target.value }))}>
                   <option value="">Todos los motivos</option>
                   {Object.entries(REASON_CONFIG).map(([val, cfg]) => (
                     <option key={val} value={val}>{cfg.icon} {cfg.label}</option>
@@ -520,20 +516,14 @@ export default function WastePage() {
                 </select>
               </div>
 
-              {/* Registrado por — visible para OWNER o para empleados (se filtra al propio usuario) */}
+              {/* Registrado por */}
               <div className="wp-filter-group">
                 <span className="wp-filter-group-label">👤 Registrado por</span>
                 {isOwner ? (
-                  /* OWNER: puede filtrar por cualquier usuario */
-                  <select
-                    className="wp-select"
-                    value={filters.createdById}
-                    onChange={(e) => dispatch(setWasteFilters({ createdById: e.target.value }))}
-                  >
-                    <option value="">Todos los usuarios</option>
-                    {usersStatus === 'loading' && (
-                      <option disabled>Cargando usuarios...</option>
-                    )}
+                  <select className="wp-select" value={filters.createdById}
+                    onChange={(e) => dispatch(setWasteFilters({ createdById: e.target.value }))}>
+                    <option value="">Todos (incluye sistema automático)</option>
+                    {usersStatus === 'loading' && <option disabled>Cargando...</option>}
                     {wasteUsers.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.firstName} {u.lastName}
@@ -543,12 +533,9 @@ export default function WastePage() {
                     ))}
                   </select>
                 ) : (
-                  /* EMPLOYEE: solo puede ver sus propias mermas */
                   <div className="wp-employee-filter">
                     <label className="wp-toggle-row">
-                      <input
-                        type="checkbox"
-                        className="wp-checkbox"
+                      <input type="checkbox" className="wp-checkbox"
                         checked={filters.createdById === String(authUser?.id)}
                         onChange={(e) =>
                           dispatch(setWasteFilters({
@@ -562,36 +549,26 @@ export default function WastePage() {
                 )}
               </div>
 
-              {/* Botones */}
               <div className="wp-filter-actions">
-                <button className="wp-btn-ghost" onClick={handleClearFilters}>
-                  Limpiar
-                </button>
-                <button className="wp-btn-apply" onClick={applyFilters}>
-                  Aplicar filtros
-                </button>
+                <button className="wp-btn-ghost" onClick={handleClearFilters}>Limpiar</button>
+                <button className="wp-btn-apply" onClick={applyFilters}>Aplicar filtros</button>
               </div>
             </div>
           )}
         </div>
 
         {/* ── Error ── */}
-        {listError && (
-          <div className="wp-error">⚠ {listError}</div>
-        )}
+        {listError && <div className="wp-error">⚠ {listError}</div>}
 
         {/* ── Resumen económico ── */}
         {(listStatus === 'succeeded' || records.length > 0) && (
           <div className="wp-summary-strip">
             <StatCard label="Registros" value={stats.count} />
             <div className="wp-summary-sep" />
-            <StatCard
-              label="Unidades perdidas"
-              value={Number(stats.totalQty).toLocaleString('es-AR')}
-            />
+            <StatCard label="Unidades perdidas"
+              value={Number(stats.totalQty).toLocaleString('es-AR')} />
             <div className="wp-summary-sep" />
-            <StatCard
-              label="Pérdida económica"
+            <StatCard label="Pérdida económica"
               value={formatARS(stats.totalLoss)}
               color={stats.totalLoss > 0 ? '#C0392B' : undefined}
               sub={stats.count > 0 ? `~${formatARS(stats.totalLoss / stats.count)} promedio` : undefined}
@@ -599,32 +576,27 @@ export default function WastePage() {
           </div>
         )}
 
-        {/* ── Tabs: Lista / Estadísticas ── */}
+        {/* ── Tabs ── */}
         {records.length > 0 && (
           <div className="wp-tabs">
-            <button
-              className={`wp-tab ${activeView === 'list' ? 'active' : ''}`}
-              onClick={() => setActiveView('list')}
-            >
+            <button className={`wp-tab ${activeView === 'list'  ? 'active' : ''}`} onClick={() => setActiveView('list')}>
               📋 Lista
             </button>
-            <button
-              className={`wp-tab ${activeView === 'stats' ? 'active' : ''}`}
-              onClick={() => setActiveView('stats')}
-            >
+            <button className={`wp-tab ${activeView === 'stats' ? 'active' : ''}`} onClick={() => setActiveView('stats')}>
               📊 Estadísticas
             </button>
           </div>
         )}
 
-        {/* ── Vista de lista ── */}
+        {/* ══════════════════════════════════════════════
+            VISTA DE LISTA
+            ══════════════════════════════════════════════ */}
         {activeView === 'list' && (
           <>
             {records.length > 0 && (
               <div className="wp-search-wrap">
                 <span className="wp-search-icon">🔍</span>
-                <input
-                  className="wp-search"
+                <input className="wp-search"
                   placeholder="Buscar por producto, categoría, proveedor, usuario..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -679,27 +651,33 @@ export default function WastePage() {
           </>
         )}
 
-        {/* ── Vista de estadísticas ── */}
+        {/* ══════════════════════════════════════════════
+            VISTA DE ESTADÍSTICAS
+            ══════════════════════════════════════════════ */}
         {activeView === 'stats' && records.length > 0 && (
           <div className="wp-stats">
             <div className="wp-stats-card">
               <h3 className="wp-stats-title">📂 Pérdidas por categoría</h3>
-              <BreakdownBar items={stats.catItems} total={stats.totalLoss} colorFn={(i) => CAT_COLORS[i % CAT_COLORS.length]} />
+              <BreakdownBar items={stats.catItems} total={stats.totalLoss}
+                colorFn={(i) => CAT_COLORS[i % CAT_COLORS.length]} />
             </div>
             <div className="wp-stats-card">
               <h3 className="wp-stats-title">🚚 Pérdidas por proveedor</h3>
-              <BreakdownBar items={stats.suppItems} total={stats.totalLoss} colorFn={(i) => SUPP_COLORS[i % SUPP_COLORS.length]} />
+              <BreakdownBar items={stats.suppItems} total={stats.totalLoss}
+                colorFn={(i) => SUPP_COLORS[i % SUPP_COLORS.length]} />
             </div>
             <div className="wp-stats-card">
               <h3 className="wp-stats-title">⚠️ Pérdidas por motivo</h3>
-              <BreakdownBar items={stats.reasonItems} total={stats.totalLoss} colorFn={(i) => Object.values(REASON_CONFIG)[i % 5]?.color || '#888'} />
+              <BreakdownBar items={stats.reasonItems} total={stats.totalLoss}
+                colorFn={(i) => Object.values(REASON_CONFIG)[i % 5]?.color || '#888'} />
             </div>
             <div className="wp-stats-card">
-              <h3 className="wp-stats-title">👤 Registros por usuario</h3>
+              <h3 className="wp-stats-title">👤 Registros por usuario / sistema</h3>
               <div className="user-stats-list">
                 {stats.userItems.map((u, i) => (
                   <div key={i} className="user-stat-row">
-                    <div className="user-stat-avatar" style={{ background: USER_COLORS[i % USER_COLORS.length] }}>
+                    <div className="user-stat-avatar"
+                      style={{ background: USER_COLORS[i % USER_COLORS.length] }}>
                       {u.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="user-stat-info">
@@ -711,13 +689,11 @@ export default function WastePage() {
                       </span>
                     </div>
                     <div className="user-stat-bar-wrap">
-                      <div
-                        className="user-stat-bar"
+                      <div className="user-stat-bar"
                         style={{
                           width: `${stats.count > 0 ? Math.round((u.count / stats.count) * 100) : 0}%`,
                           background: USER_COLORS[i % USER_COLORS.length],
-                        }}
-                      />
+                        }} />
                     </div>
                   </div>
                 ))}
@@ -725,31 +701,21 @@ export default function WastePage() {
             </div>
           </div>
         )}
-
       </div>
 
       {/* ── Modal: Registrar merma ── */}
-
       <Modal
         isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          dispatch(clearWasteActionState());
-        }}
+        onClose={() => { setModalOpen(false); dispatch(clearWasteActionState()); }}
         title="Registrar merma"
         width="540px"
       >
-    
         <WasteForm
           onSuccess={handleFormSuccess}
-          onCancel={() => {
-            setModalOpen(false);
-            dispatch(clearWasteActionState());
-          }}
+          onCancel={() => { setModalOpen(false); dispatch(clearWasteActionState()); }}
         />
-        
       </Modal>
-      
+
       <style>{`
         .wp-page    { min-height: 100vh; background: var(--cream); }
         .wp-content {
@@ -794,10 +760,7 @@ export default function WastePage() {
         .wp-range-chip.clear { border-color: rgba(192,57,43,0.4); color: #C0392B; background: rgba(192,57,43,0.05); }
         .wp-range-chip.clear:hover { background: rgba(192,57,43,0.1); }
 
-        .wp-filters-panel {
-          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-lg);
-          background: white; overflow: hidden;
-        }
+        .wp-filters-panel { border: 1.5px solid var(--cream-dark); border-radius: var(--radius-lg); background: white; overflow: hidden; }
         .wp-filters-toggle {
           width: 100%; display: flex; align-items: center; gap: 10px;
           padding: 12px 16px; background: none; border: none;
@@ -818,14 +781,11 @@ export default function WastePage() {
           display: flex; flex-direction: column; gap: 14px;
           animation: fadeIn 0.2s ease;
         }
-        .wp-filter-group { display: flex; flex-direction: column; gap: 6px; }
-        .wp-filter-group-label {
-          font-size: 0.72rem; font-weight: 700;
-          text-transform: uppercase; letter-spacing: 0.08em; color: var(--warm-gray);
-        }
-        .wp-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .wp-filter-field { display: flex; flex-direction: column; gap: 4px; }
-        .wp-field-label { font-size: 0.72rem; color: var(--warm-gray-light); font-weight: 600; }
+        .wp-filter-group  { display: flex; flex-direction: column; gap: 6px; }
+        .wp-filter-group-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warm-gray); }
+        .wp-filter-row    { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .wp-filter-field  { display: flex; flex-direction: column; gap: 4px; }
+        .wp-field-label   { font-size: 0.72rem; color: var(--warm-gray-light); font-weight: 600; }
         .wp-date-input, .wp-select {
           width: 100%; padding: 10px 12px;
           font-family: var(--font-body); font-size: 0.88rem;
@@ -836,15 +796,8 @@ export default function WastePage() {
         }
         .wp-date-input:focus, .wp-select:focus { border-color: #C0392B; background: #fff; }
 
-        /* Filtro de "mis registros" para EMPLOYEE */
-        .wp-employee-filter {
-          padding: 10px 12px; border-radius: var(--radius-md);
-          background: var(--cream); border: 1.5px solid var(--cream-dark);
-        }
-        .wp-toggle-row {
-          display: flex; align-items: center; gap: 8px;
-          cursor: pointer; font-size: 0.88rem; color: var(--espresso); font-weight: 500;
-        }
+        .wp-employee-filter { padding: 10px 12px; border-radius: var(--radius-md); background: var(--cream); border: 1.5px solid var(--cream-dark); }
+        .wp-toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--espresso); font-weight: 500; }
         .wp-checkbox { width: 17px; height: 17px; accent-color: #C0392B; cursor: pointer; }
 
         .wp-filter-actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 4px; }
@@ -856,18 +809,13 @@ export default function WastePage() {
         }
         .wp-btn-ghost:hover { border-color: var(--warm-gray); color: var(--espresso); }
         .wp-btn-apply {
-          padding: 9px 20px; background: #C0392B; color: white;
-          border: none; border-radius: var(--radius-md);
-          font-family: var(--font-body); font-size: 0.84rem; font-weight: 600;
-          cursor: pointer; transition: all var(--transition-fast);
+          padding: 9px 20px; background: #C0392B; color: white; border: none;
+          border-radius: var(--radius-md); font-family: var(--font-body);
+          font-size: 0.84rem; font-weight: 600; cursor: pointer; transition: all var(--transition-fast);
         }
         .wp-btn-apply:hover { filter: brightness(1.08); }
 
-        .wp-error {
-          padding: 12px 16px; background: var(--error-light);
-          border: 1px solid var(--error); border-radius: var(--radius-md);
-          color: var(--error); font-size: 0.88rem;
-        }
+        .wp-error { padding: 12px 16px; background: var(--error-light); border: 1px solid var(--error); border-radius: var(--radius-md); color: var(--error); font-size: 0.88rem; }
 
         .wp-summary-strip {
           display: flex; align-items: stretch;
@@ -876,24 +824,12 @@ export default function WastePage() {
           box-shadow: var(--shadow-sm); gap: 0;
         }
         .wp-summary-sep { width: 1px; background: var(--cream-dark); flex-shrink: 0; margin: 0 4px; }
-        .stat-card {
-          flex: 1; display: flex; flex-direction: column;
-          align-items: center; gap: 3px; padding: 0 8px; text-align: center;
-        }
-        .stat-card-label {
-          font-size: 0.66rem; color: var(--warm-gray); font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.07em; line-height: 1;
-        }
-        .stat-card-value {
-          font-family: var(--font-display); font-size: 1.3rem;
-          font-weight: 700; color: var(--espresso); line-height: 1.1;
-        }
-        .stat-card-sub { font-size: 0.68rem; color: var(--warm-gray-light); }
+        .stat-card { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 8px; text-align: center; }
+        .stat-card-label { font-size: 0.66rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; line-height: 1; }
+        .stat-card-value { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--espresso); line-height: 1.1; }
+        .stat-card-sub   { font-size: 0.68rem; color: var(--warm-gray-light); }
 
-        .wp-tabs {
-          display: flex; background: var(--cream-dark);
-          border-radius: var(--radius-md); padding: 3px; align-self: flex-start;
-        }
+        .wp-tabs { display: flex; background: var(--cream-dark); border-radius: var(--radius-md); padding: 3px; align-self: flex-start; }
         .wp-tab {
           padding: 8px 16px; border: none; border-radius: calc(var(--radius-md) - 2px);
           font-family: var(--font-body); font-size: 0.84rem; font-weight: 600;
@@ -905,48 +841,52 @@ export default function WastePage() {
         .wp-search-wrap { position: relative; }
         .wp-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; pointer-events: none; }
         .wp-search {
-          width: 100%; padding: 10px 36px;
+          width: 100%; padding: 10px 36px; box-sizing: border-box;
           font-family: var(--font-body); font-size: 0.88rem;
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
-          background: white; color: var(--espresso); outline: none; box-sizing: border-box;
+          background: white; color: var(--espresso); outline: none;
           transition: border-color var(--transition-base);
         }
         .wp-search:focus { border-color: #C0392B; }
         .wp-search-clear {
           position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer;
-          color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
+          background: none; border: none; cursor: pointer; color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
         }
 
         .wp-list { display: flex; flex-direction: column; gap: 7px; }
 
-        /* Waste row */
+        /* ── WasteRow ── */
         .wr-wrap { animation: fadeIn 0.3s ease both; }
         .wr-row {
           display: flex; align-items: stretch;
-          background: white; border: 1px solid var(--cream-dark);
-          border-radius: var(--radius-md);
+          background: white; border: 1px solid var(--cream-dark); border-radius: var(--radius-md);
           cursor: pointer; overflow: hidden;
           transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
         }
         .wr-row:hover { box-shadow: var(--shadow-md); border-color: rgba(192,57,43,0.2); }
-        .wr-row.open  {
-          border-color: #C0392B;
-          border-bottom-left-radius: 0; border-bottom-right-radius: 0;
-          border-bottom: none;
-        }
+        .wr-row.open  { border-color: #C0392B; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: none; }
         .wr-indicator { width: 4px; flex-shrink: 0; }
         .wr-body { flex: 1; padding: 13px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+        /* ── Badge automático en ROJO ── */
+        .wr-auto-badge {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 5px 12px; border-radius: var(--radius-md);
+          background: #C0392B; color: white;
+          font-size: 0.75rem; font-weight: 800;
+          letter-spacing: 0.04em; text-transform: uppercase;
+          align-self: flex-start;
+          box-shadow: 0 2px 8px rgba(192,57,43,0.30);
+        }
+
         .wr-top  { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         .wr-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .wr-product  { font-weight: 700; font-size: 0.95rem; color: var(--espresso); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .wr-category { font-size: 0.74rem; color: var(--warm-gray); }
         .wr-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
         .wr-qty   { font-weight: 800; font-size: 0.98rem; color: #C0392B; }
-        .wr-bottom {
-          display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-          font-size: 0.77rem; color: var(--warm-gray);
-        }
+
+        .wr-bottom { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.77rem; color: var(--warm-gray); }
         .wr-date, .wr-supplier { flex-shrink: 0; }
         .wr-loss { font-weight: 700; font-size: 0.82rem; flex-shrink: 0; }
 
@@ -963,11 +903,14 @@ export default function WastePage() {
           display: flex; align-items: center; justify-content: center;
           font-size: 0.6rem; font-weight: 700; flex-shrink: 0;
         }
-        .wr-author-unknown {
-          color: var(--warm-gray-light); font-style: italic; font-size: 0.72rem;
+        .wr-author-system {
+          display: inline-flex; align-items: center; gap: 4px;
+          font-size: 0.74rem; font-weight: 600; color: #1565C0;
           padding: 2px 8px; border-radius: 20px;
-          background: var(--cream-dark); flex-shrink: 0;
+          background: rgba(21,101,192,0.08); border: 1px solid rgba(21,101,192,0.2);
+          flex-shrink: 0;
         }
+
         .wr-expand-icon { font-size: 0.65rem; color: var(--warm-gray-light); margin-left: auto; }
 
         .wr-detail {
@@ -978,18 +921,14 @@ export default function WastePage() {
         }
         .wr-detail-grid { display: flex; flex-wrap: wrap; gap: 18px; }
         .wrd-item  { display: flex; flex-direction: column; gap: 2px; }
-        .wrd-label {
-          font-size: 0.63rem; text-transform: uppercase;
-          letter-spacing: 0.06em; color: var(--warm-gray-light); font-weight: 600;
-        }
+        .wrd-label { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--warm-gray-light); font-weight: 600; }
         .wrd-notes { font-size: 0.8rem; color: var(--warm-gray); margin-top: 10px; line-height: 1.5; }
 
-        /* Stats */
+        /* ── Stats ── */
         .wp-stats { display: flex; flex-direction: column; gap: 14px; }
         .wp-stats-card {
           background: white; border: 1px solid var(--cream-dark);
-          border-radius: var(--radius-lg); padding: 18px 20px;
-          box-shadow: var(--shadow-sm);
+          border-radius: var(--radius-lg); padding: 18px 20px; box-shadow: var(--shadow-sm);
         }
         .wp-stats-title {
           font-family: var(--font-display); font-size: 0.95rem; font-weight: 700;
@@ -1031,10 +970,7 @@ export default function WastePage() {
         .wp-empty-title { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--espresso); }
         .wp-empty-desc  { font-size: 0.84rem; color: var(--warm-gray); line-height: 1.6; max-width: 360px; }
 
-        .wp-empty-search {
-          display: flex; flex-direction: column; align-items: center;
-          gap: 10px; padding: 44px 24px; text-align: center;
-        }
+        .wp-empty-search { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 44px 24px; text-align: center; }
         .wp-empty-search > span { font-size: 2rem; opacity: 0.4; }
         .wp-empty-search > p    { font-family: var(--font-display); font-size: 0.95rem; font-weight: 700; color: var(--espresso); }
 
@@ -1049,15 +985,15 @@ export default function WastePage() {
         .wp-count { text-align: right; font-size: 0.75rem; color: var(--warm-gray-light); }
 
         @media (max-width: 540px) {
-          .wp-header    { flex-direction: column; }
-          .wp-header-actions { width: 100%; justify-content: flex-end; }
-          .wp-filter-row { grid-template-columns: 1fr; }
+          .wp-header        { flex-direction: column; }
+          .wp-header-actions{ width: 100%; justify-content: flex-end; }
+          .wp-filter-row    { grid-template-columns: 1fr; }
           .wp-summary-strip { flex-direction: column; gap: 12px; }
-          .wp-summary-sep { display: none; }
-          .stat-card { align-items: flex-start; padding: 0; }
-          .user-stat-bar-wrap { display: none; }
-          .breakdown-vals { flex-wrap: wrap; }
-          .wp-content { padding: var(--space-md) var(--space-sm); }
+          .wp-summary-sep   { display: none; }
+          .stat-card        { align-items: flex-start; padding: 0; }
+          .user-stat-bar-wrap{ display: none; }
+          .breakdown-vals   { flex-wrap: wrap; }
+          .wp-content       { padding: var(--space-md) var(--space-sm); }
         }
       `}</style>
     </div>
