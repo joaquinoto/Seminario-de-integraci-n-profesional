@@ -71,12 +71,6 @@ public class SecurityConfig {
                     .requestMatchers("/api/stock/**").authenticated()
 
                     // ── Restock suggestions: OWNER only ──────────────────────────────
-                    // NOTE: this is a sub-path of /api/stock/** so the authenticated()
-                    // rule above covers the base, but we add an explicit OWNER guard.
-                    // Spring Security evaluates rules in order — place OWNER rule BEFORE
-                    // the generic authenticated() rule for /api/stock/**.
-                    // The ordering is handled below by placing this before the stock catch-all.
-                    // (Re-declared explicitly for clarity; Spring uses first-match.)
                     .requestMatchers(HttpMethod.GET, "/api/stock/restock-suggestions").hasAuthority(Role.OWNER.name())
 
                     // ── Waste records: OWNER + EMPLOYEE ───────────────────────────────
@@ -88,8 +82,12 @@ public class SecurityConfig {
                     // ── Dashboard: OWNER + EMPLOYEE ──────────────────────────────────
                     .requestMatchers("/api/dashboard/**").authenticated()
 
-                    // ── Promotions: OWNER only ────────────────────────────────────────
-                    .requestMatchers("/api/promotions/**").hasAuthority(Role.OWNER.name())
+                    // ── Promotions ────────────────────────────────────────────────────
+                    // GET /api/promotions y GET /api/promotions/active → OWNER + EMPLOYEE
+                    // (los empleados necesitan ver las promociones activas)
+                    .requestMatchers(HttpMethod.GET, "/api/promotions/suggestions").hasAuthority(Role.OWNER.name())
+                    .requestMatchers(HttpMethod.GET, "/api/promotions").authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/promotions/active").authenticated()
 
                     // ── Reports: OWNER only ───────────────────────────────────────────
                     .requestMatchers("/api/reports/**").hasAuthority(Role.OWNER.name())

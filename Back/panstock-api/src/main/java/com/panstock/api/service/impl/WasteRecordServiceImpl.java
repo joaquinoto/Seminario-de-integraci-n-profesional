@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,6 +27,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class WasteRecordServiceImpl implements WasteRecordService {
+
+    // ── Zona horaria del negocio (igual que el resto del backend) ─────────────
+    private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
     private final InventoryBatchRepository inventoryBatchRepository;
     private final WasteRecordRepository    wasteRecordRepository;
@@ -42,14 +46,13 @@ public class WasteRecordServiceImpl implements WasteRecordService {
 
         validateWasteRequest(batch, request);
 
-        if (request.userId() == null) {
-            throw new BadRequestException(
-                    "Se requiere el id del usuario que registra la merma.");
+        // userId puede ser null → registro automático del sistema
+        User user = null;
+        if (request.userId() != null) {
+            user = userRepository.findById(request.userId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Usuario no encontrado con id " + request.userId()));
         }
-
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Usuario no encontrado con id " + request.userId()));
 
         Product product       = batch.getProduct();
         BigDecimal unitCost      = batch.getUnitCost()      != null ? batch.getUnitCost()      : product.getCostPrice();
@@ -61,7 +64,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         WasteRecord wasteRecord = new WasteRecord();
         wasteRecord.setProduct(product);
         wasteRecord.setBatch(batch);
-        wasteRecord.setCreatedBy(user);
+        wasteRecord.setCreatedBy(user);   // null si es registro automático
         wasteRecord.setQuantity(request.quantity());
         wasteRecord.setReason(request.reason());
         wasteRecord.setUnitCost(unitCost);
@@ -82,12 +85,19 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         StockMovement movement = new StockMovement();
         movement.setProduct(product);
         movement.setBatch(batch);
-        movement.setUser(user);
+        movement.setUser(user);   // null si es registro automático
         movement.setMovementType(StockMovementType.WASTE);
         movement.setQuantity(request.quantity());
         movement.setRelatedWasteRecordId(saved.getId());
-        movement.setNotes("Descuento por merma. Motivo: " + request.reason()
-                + ". Registrado por: " + user.getFirstName() + " " + user.getLastName());
+
+        if (user != null) {
+            movement.setNotes("Descuento por merma. Motivo: " + request.reason()
+                    + ". Registrado por: " + user.getFirstName() + " " + user.getLastName());
+        } else {
+            movement.setNotes("Descuento por merma automática. Motivo: " + request.reason()
+                    + ". Registrado por: sistema.");
+        }
+
         stockMovementRepository.save(movement);
 
         return WasteRecordMapper.toResponse(saved);
@@ -159,11 +169,14 @@ public class WasteRecordServiceImpl implements WasteRecordService {
      *   - El lote no puede estar DEPLETED ni DISCARDED
      *
      * Regla específica para motivo EXPIRED:
-     *   - El lote DEBE tener fecha de vencimiento definida
-     *   - La fecha de vencimiento DEBE ser anterior o igual a hoy
-     *     (es decir, el lote debe estar efectivamente vencido)
-     *   - Si el lote no está vencido, se lanza BadRequestException con
-     *     mensaje claro para que el frontend lo muestre al usuario
+     *   - El lote DEBE tener fecha de vencimiento definida y ya pasada
+     *
+     * IMPORTANTE: se usa ZoneId "America/Argentina/Buenos_Aires" para
+     * comparar fechas, de forma consistente con el resto del backend
+     * (StockServiceImpl, AlertServiceImpl, PromotionServiceImpl, etc.).
+     * Antes se usaba LocalDate.now() sin zona horaria, lo que fallaba
+     * en producción (servidor UTC) al intentar descartar lotes vencidos
+     * desde el frontend en horario nocturno de Argentina.
      */
     private void validateWasteRequest(InventoryBatch batch, WasteRecordRequest request) {
         if (request.quantity().compareTo(BigDecimal.ZERO) <= 0) {
@@ -181,8 +194,6 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                     "No se puede registrar merma sobre un lote sin stock disponible.");
         }
 
-        // Validación específica para motivo EXPIRED:
-        // el lote debe estar efectivamente vencido a la fecha de hoy.
         if (request.reason() == WasteReason.EXPIRED) {
             if (batch.getExpirationDate() == null) {
                 throw new BadRequestException(
@@ -190,7 +201,11 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                         + "Para registrar una merma por vencimiento, el lote debe tener "
                         + "fecha de vencimiento y ésta debe ser anterior o igual a la fecha actual.");
             }
-            if (batch.getExpirationDate().isAfter(LocalDate.now())) {
+            // FIX: usar LocalDate.now(ZONE) con zona horaria de Buenos Aires
+            // en lugar de LocalDate.now() (que usaba UTC del servidor en producción),
+            // para que el auto-descarte del frontend funcione correctamente en
+            // cualquier horario del día.
+            if (batch.getExpirationDate().isAfter(LocalDate.now(ZONE))) {
                 throw new BadRequestException(
                         "El lote seleccionado no está vencido (vence el "
                         + batch.getExpirationDate() + "). "

@@ -16,6 +16,11 @@ import {
   selectRestockCount,
   selectRestockStatus,
 } from '../../features/stock/restockSlice';
+import {
+  fetchPromotionSuggestions,
+  selectSuggestionsCount,
+  selectSuggestionsStatus,
+} from '../../features/promotions/promotionsSlice';
 import NotificationBell from '../notifications/NotificationBell';
 import useNotifications from '../../features/notifications/useNotifications';
 
@@ -25,76 +30,108 @@ export default function AppTopbar() {
   const user        = useSelector(selectUser);
   const token       = useSelector(selectToken);
 
+  // Expiration counts
   const greenCount   = useSelector(selectGreenCount);
   const yellowCount  = useSelector(selectYellowCount);
   const redCount     = useSelector(selectRedCount);
   const expiredCount = useSelector(selectExpiredCount);
   const urgentCount  = expiredCount + redCount + yellowCount;
-  // Restock — only relevant/fetched for OWNER
+
+  // Restock (OWNER only)
   const restockCount  = useSelector(selectRestockCount);
   const restockStatus = useSelector(selectRestockStatus);
-  const isOwner       = user?.role === 'OWNER';
-  
+
+  // Promotions suggestions count (OWNER only)
+  const promotionSuggestionsCount  = useSelector(selectSuggestionsCount);
+  const promotionSuggestionsStatus = useSelector(selectSuggestionsStatus);
+
+  const isOwner = user?.role === 'OWNER';
+
   const { requestPermission } = useNotifications();
 
+  // ── Fetch expiration semaphore on mount ──────────────────────────────────
   useEffect(() => {
     if (!token) return;
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
   }, [token, dispatch]);
 
-  // Fetch restock suggestions on mount if OWNER
+  // ── Fetch restock suggestions on mount if OWNER ──────────────────────────
   useEffect(() => {
     if (!token || !isOwner) return;
-    // Only fetch if not already loaded to avoid hammering the backend on every nav
     if (restockStatus === 'idle') {
       dispatch(fetchRestockSuggestions({ token }));
     }
   }, [token, isOwner, restockStatus, dispatch]);
+
+  // ── Fetch promotion suggestions on mount if OWNER ────────────────────────
+  useEffect(() => {
+    if (!token || !isOwner) return;
+    if (promotionSuggestionsStatus === 'idle') {
+      dispatch(fetchPromotionSuggestions({ token }));
+    }
+  }, [token, isOwner, promotionSuggestionsStatus, dispatch]);
 
   const handleLogout = () => {
     dispatch(logout());
     navigate('/login', { replace: true });
   };
 
-  const expirationBadgeColor = expiredCount > 0 ? '#C0392B' : redCount > 0 ? '#E74C3C' : '#E67E22';
-  const restockBadgeColor    = '#E67E22';
+  // ── Badge colors ─────────────────────────────────────────────────────────
+  const expirationBadgeColor  = expiredCount > 0 ? '#C0392B' : redCount > 0 ? '#E74C3C' : '#E67E22';
+  const restockBadgeColor     = '#E67E22';
+  const promotionsBadgeColor  = '#D68910';
 
+  // ── Navigation items ──────────────────────────────────────────────────────
   const BASE_NAV = [
-    { to: '/dashboard',  label: 'Inicio',      icon: '🏠', badge: null },
-    { to: '/stock',      label: 'Stock',        icon: '📦', badge: null },
-    { to: '/waste',      label: 'Mermas',       icon: '🗑️', badge: null },
+    { to: '/dashboard',   label: 'Inicio',       icon: '🏠', badge: null },
+    { to: '/stock',       label: 'Stock',         icon: '📦', badge: null },
+    { to: '/waste',       label: 'Mermas',        icon: '🗑️', badge: null },
     {
-      to: '/expiration', label: 'Vencimientos', icon: '⏰',
-      badge: urgentCount > 0 ? urgentCount : null,
+      to: '/expiration',  label: 'Vencimientos',  icon: '⏰',
+      badge:      urgentCount > 0 ? urgentCount : null,
       badgeColor: expirationBadgeColor,
     },
-    { to: '/products',   label: 'Productos',    icon: '🥐', badge: null },
-    { to: '/categories', label: 'Categorías',   icon: '🗂',  badge: null },
-    { to: '/suppliers',  label: 'Proveedores',  icon: '🚚', badge: null },
+    // Promociones: accesible para ambos roles
+    // OWNER ve badge con cantidad de sugerencias pendientes
+    // EMPLOYEE ve badge con cantidad de promociones activas (si hay)
+    {
+      to: '/promotions',  label: 'Promociones',   icon: '🏷️',
+      badge:      isOwner && promotionSuggestionsCount > 0
+                    ? promotionSuggestionsCount
+                    : null,
+      badgeColor: promotionsBadgeColor,
+    },
+    { to: '/products',    label: 'Productos',     icon: '🥐', badge: null },
+    { to: '/categories',  label: 'Categorías',    icon: '🗂',  badge: null },
+    { to: '/suppliers',   label: 'Proveedores',   icon: '🚚', badge: null },
   ];
-  // Extra item only for OWNER
+
+  // Items exclusivos del OWNER
   const OWNER_NAV = isOwner
     ? [
         {
           to: '/restock',
           label: 'Reposición',
-          icon: '🛒',
-          badge: restockCount > 0 ? restockCount : null,
+          icon:  '🛒',
+          badge:      restockCount > 0 ? restockCount : null,
           badgeColor: restockBadgeColor,
         },
       ]
     : [];
 
   const NAV_ITEMS = [...BASE_NAV, ...OWNER_NAV];
+
   return (
     <header className="topbar">
       <div className="topbar-inner">
+        {/* Brand */}
         <NavLink to="/dashboard" className="topbar-brand">
           <img src="/logo_panstock.png" alt="PanStock" width="30" height="30" />
           <span className="topbar-brand-name">PanStock</span>
         </NavLink>
 
+        {/* Nav */}
         <nav className="topbar-nav" aria-label="Navegación principal">
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -117,6 +154,7 @@ export default function AppTopbar() {
           ))}
         </nav>
 
+        {/* Right side */}
         <div className="topbar-right">
           <NotificationBell onRequestPermission={requestPermission} />
 
@@ -148,7 +186,7 @@ export default function AppTopbar() {
       </div>
 
       <style>{`
-       .topbar {
+        .topbar {
           position: sticky; top: 0; z-index: 200;
           background: rgba(247,243,238,0.96);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -160,24 +198,58 @@ export default function AppTopbar() {
           display: flex; align-items: center; gap: var(--space-md);
           height: 54px;
         }
-        .topbar-brand { display: flex; align-items: center; gap: 7px; text-decoration: none; flex-shrink: 0; }
-        .topbar-brand-name { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; color: var(--espresso); letter-spacing: -0.01em; }
-        .topbar-nav { display: flex; align-items: center; gap: 1px; flex: 1; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+        .topbar-brand {
+          display: flex; align-items: center; gap: 7px;
+          text-decoration: none; flex-shrink: 0;
+        }
+        .topbar-brand-name {
+          font-family: var(--font-display); font-size: 1.05rem;
+          font-weight: 700; color: var(--espresso); letter-spacing: -0.01em;
+        }
+        .topbar-nav {
+          display: flex; align-items: center; gap: 1px;
+          flex: 1; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+        }
         .topbar-nav::-webkit-scrollbar { display: none; }
-        .topbar-link { position: relative; display: flex; align-items: center; gap: 5px; padding: 6px 9px; border-radius: var(--radius-md); text-decoration: none; font-size: 0.83rem; font-weight: 500; color: var(--warm-gray); white-space: nowrap; flex-shrink: 0; transition: background var(--transition-fast), color var(--transition-fast); }
+        .topbar-link {
+          position: relative; display: flex; align-items: center; gap: 5px;
+          padding: 6px 9px; border-radius: var(--radius-md);
+          text-decoration: none; font-size: 0.83rem; font-weight: 500;
+          color: var(--warm-gray); white-space: nowrap; flex-shrink: 0;
+          transition: background var(--transition-fast), color var(--transition-fast);
+        }
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
         .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
         .topbar-link-icon  { font-size: 0.92rem; line-height: 1; }
         .topbar-link-label { line-height: 1; }
-        .topbar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; font-size: 0.62rem; font-weight: 700; color: white; line-height: 1; animation: pulse-badge 2s ease infinite; }
+        .topbar-badge {
+          display: inline-flex; align-items: center; justify-content: center;
+          min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+          font-size: 0.62rem; font-weight: 700; color: white; line-height: 1;
+          animation: pulse-badge 2s ease infinite;
+        }
         @keyframes pulse-badge { 0%,100%{ opacity:1 } 50%{ opacity:0.65 } }
+
         .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .topbar-user-info { display: flex; align-items: center; gap: 7px; }
-        .topbar-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--amber); color: white; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 0.8rem; font-weight: 700; flex-shrink: 0; cursor: default; }
+        .topbar-avatar {
+          width: 28px; height: 28px; border-radius: 50%;
+          background: var(--amber); color: white;
+          display: flex; align-items: center; justify-content: center;
+          font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
+          flex-shrink: 0; cursor: default;
+        }
         .topbar-username { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
         .topbar-role { font-size: 0.85rem; }
-        .topbar-logout { display: flex; align-items: center; gap: 5px; padding: 6px 11px; background: none; border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md); font-family: var(--font-body); font-size: 0.8rem; color: var(--warm-gray); cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0; }
+        .topbar-logout {
+          display: flex; align-items: center; gap: 5px;
+          padding: 6px 11px; background: none;
+          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.8rem; color: var(--warm-gray);
+          cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0;
+        }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
+
         @media (max-width: 780px) {
           .hide-mobile       { display: none !important; }
           .topbar-link-label { display: none; }

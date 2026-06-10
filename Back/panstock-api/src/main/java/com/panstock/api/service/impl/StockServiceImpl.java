@@ -261,10 +261,23 @@ public class StockServiceImpl implements StockService {
                 .toList();
     }
 
+    /**
+     * getExpired
+     *
+     * FIX: solo devuelve lotes AVAILABLE con currentQuantity > 0.
+     *
+     * Antes usaba findAll() sin filtrar por batchStatus ni por stock,
+     * lo que causaba que lotes ya descartados por el sistema (DEPLETED, qty=0)
+     * siguieran apareciendo en el semáforo de vencimientos.
+     *
+     * Ahora usa findAvailableWithStock() → solo lotes AVAILABLE con qty > 0
+     * → un lote descartado automáticamente (DEPLETED, qty=0) desaparece
+     * inmediatamente del panel de vencimientos.
+     */
     @Override
     @Transactional(readOnly = true)
     public List<ExpirationItemResponse> getExpired() {
-        return inventoryBatchRepository.findAll().stream()
+        return inventoryBatchRepository.findAvailableWithStock().stream()
                 .filter(b -> Boolean.TRUE.equals(b.getProduct().getActive()))
                 .filter(b -> b.getExpirationDate() != null)
                 .map(this::toExpirationItem)
@@ -317,7 +330,6 @@ public class StockServiceImpl implements StockService {
                         "Usuario no encontrado con id " + userId));
     }
 
-    
     private ExpirationItemResponse toExpirationItem(InventoryBatch batch) {
         Long daysToExpire = batch.getExpirationDate() != null
                 ? ChronoUnit.DAYS.between(LocalDate.now(ZONE), batch.getExpirationDate())

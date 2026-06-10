@@ -6,7 +6,7 @@ import {
   fetchSemaphore,
   selectSemaphoreCounts,
   selectSemaphoreStatus,
-  clearExpirationState,     
+  clearExpirationState,
 } from '../features/stock/expirationSlice';
 import {
   fetchRestockSuggestions,
@@ -14,6 +14,14 @@ import {
   selectRestockStatus,
   clearRestockState,
 } from '../features/stock/restockSlice';
+import {
+  fetchPromotions,
+  fetchPromotionSuggestions,
+  selectActivePromotionsCount,
+  selectSuggestionsCount,
+  selectSuggestionsStatus,
+  clearPromotionsState,
+} from '../features/promotions/promotionsSlice';
 import AppTopbar from '../components/layout/AppTopbar';
 
 const roleLabels = {
@@ -25,6 +33,7 @@ const MAIN_MODULES = [
   { icon: '📦', title: 'Stock',        desc: 'Inventario, lotes e ingresos',           to: '/stock'      },
   { icon: '🗑️', title: 'Mermas',       desc: 'Registro de descartes y desperdicios',   to: '/waste'      },
   { icon: '⏰', title: 'Vencimientos', desc: 'Semáforo de fechas de vencimiento',      to: '/expiration' },
+  { icon: '🏷️', title: 'Promociones',  desc: 'Descuentos sobre lotes próximos a vencer', to: '/promotions' },
 ];
 
 const CATALOG_MODULES = [
@@ -33,14 +42,12 @@ const CATALOG_MODULES = [
   { icon: '🚚', title: 'Proveedores', desc: 'Franquicia, mayoristas y externos',      to: '/suppliers'  },
 ];
 
-// OWNER-only modules
 const OWNER_MODULES = [
   { icon: '🛒', title: 'Reposición',  desc: 'Productos con stock por debajo del mínimo', to: '/restock' },
 ];
 
 const COMING_MODULES = [
-  { icon: '📊', title: 'Reportes',    desc: 'Mermas y pérdidas económicas'   },
-  { icon: '🏷️', title: 'Promociones', desc: 'Descuentos por vencimiento'     },
+  { icon: '📊', title: 'Reportes',    desc: 'Mermas y pérdidas económicas' },
 ];
 
 export default function DashboardPage() {
@@ -49,24 +56,38 @@ export default function DashboardPage() {
   const user     = useSelector(selectUser);
   const token    = useSelector(selectToken);
   const counts   = useSelector(selectSemaphoreCounts);
-  const semStatus= useSelector(selectSemaphoreStatus);
+  const semStatus = useSelector(selectSemaphoreStatus);
+
   const restockCount  = useSelector(selectRestockCount);
   const restockStatus = useSelector(selectRestockStatus);
- 
+
+  const activePromoCount       = useSelector(selectActivePromotionsCount);
+  const promotionSuggestCount  = useSelector(selectSuggestionsCount);
+  const promotionSuggestStatus = useSelector(selectSuggestionsStatus);
+
   const isOwner = user?.role === 'OWNER';
-  const role = roleLabels[user?.role] || roleLabels.EMPLOYEE;
+  const role    = roleLabels[user?.role] || roleLabels.EMPLOYEE;
 
   useEffect(() => {
     if (!token) return;
-    // ── Se limpia el estado viejo antes de pedir datos frescos ────────
-    // Evita que Redux Persist sirva conteos desactualizados del localStorage
-    // mientras llega la respuesta del servidor.
+
+    // Expiration semaphore
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
-    // Pre-fetch restock count so the badge in the dashboard card is ready
-    if (isOwner && restockStatus === 'idle') {
-      dispatch(clearRestockState());
-      dispatch(fetchRestockSuggestions({ token }));
+
+    // Promotions — cargar para ambos roles (activas visibles para todos)
+    dispatch(clearPromotionsState());
+    dispatch(fetchPromotions({ token }));
+
+    // OWNER extras
+    if (isOwner) {
+      if (restockStatus === 'idle') {
+        dispatch(clearRestockState());
+        dispatch(fetchRestockSuggestions({ token }));
+      }
+      if (promotionSuggestStatus === 'idle') {
+        dispatch(fetchPromotionSuggestions({ token }));
+      }
     }
   }, [token, dispatch, isOwner]);
 
@@ -75,6 +96,21 @@ export default function DashboardPage() {
                  : counts.red     > 0 ? '#E74C3C'
                  : counts.yellow  > 0 ? '#E67E22'
                  : '#27AE60';
+
+  // Color de la card de promociones
+  const promoColor = isOwner
+    ? (promotionSuggestCount > 0 ? '#D68910' : activePromoCount > 0 ? '#2E7D32' : '#27AE60')
+    : (activePromoCount > 0 ? '#2E7D32' : '#27AE60');
+
+  const promoSubtext = isOwner
+    ? promotionSuggestCount > 0
+        ? `${promotionSuggestCount} sugerencia${promotionSuggestCount !== 1 ? 's' : ''} pendiente${promotionSuggestCount !== 1 ? 's' : ''}`
+        : activePromoCount > 0
+            ? `${activePromoCount} promoción${activePromoCount !== 1 ? 'es' : ''} activa${activePromoCount !== 1 ? 's' : ''}`
+            : 'Sin sugerencias ni promociones activas'
+    : activePromoCount > 0
+        ? `${activePromoCount} promoción${activePromoCount !== 1 ? 'es' : ''} activa${activePromoCount !== 1 ? 's' : ''}`
+        : 'Sin promociones activas por el momento';
 
   return (
     <div className="dash-page">
@@ -96,7 +132,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Semáforo ── */}
+        {/* ── Semáforo de vencimientos ── */}
         <button
           className="semaphore-card"
           onClick={() => navigate('/expiration')}
@@ -118,10 +154,10 @@ export default function DashboardPage() {
 
           <div className="sem-dots">
             {[
-              { key: 'expired', label: 'Venc.',   val: counts.expired, color: '#C0392B' },
-              { key: 'red',     label: 'Hoy',     val: counts.red,     color: '#E74C3C' },
-              { key: 'yellow',  label: 'Próx.',   val: counts.yellow,  color: '#E67E22' },
-              { key: 'green',   label: 'OK',      val: counts.green,   color: '#27AE60' },
+              { key: 'expired', label: 'Venc.',  val: counts.expired, color: '#C0392B' },
+              { key: 'red',     label: 'Hoy',    val: counts.red,     color: '#E74C3C' },
+              { key: 'yellow',  label: 'Próx.',  val: counts.yellow,  color: '#E67E22' },
+              { key: 'green',   label: 'OK',     val: counts.green,   color: '#27AE60' },
             ].map(({ key, label, val, color }) => (
               <div key={key} className="sem-dot-item">
                 <span className="sem-dot-circle" style={{ background: color }} />
@@ -133,15 +169,44 @@ export default function DashboardPage() {
 
           <span className="sem-arrow">→</span>
         </button>
-        
+
+        {/* ── Card de Promociones — visible para OWNER y EMPLOYEE ── */}
+        <button
+          className="promo-dash-card"
+          onClick={() => navigate('/promotions')}
+          style={{ '--promo-color': promoColor }}
+        >
+          <div className="promo-dash-left">
+            <div className="promo-dash-icon" style={{ background: promoColor }}>🏷️</div>
+            <div>
+              <p className="promo-dash-title">Promociones de venta</p>
+              <p className="promo-dash-sub">{promoSubtext}</p>
+            </div>
+          </div>
+
+          {/* Badge de sugerencias (OWNER) o activas (EMPLOYEE) */}
+          {(isOwner && promotionSuggestCount > 0) && (
+            <div className="promo-dash-badge" style={{ background: promoColor + '18', color: promoColor }}>
+              <span className="promo-dash-badge-count">{promotionSuggestCount}</span>
+              <span className="promo-dash-badge-label">sugerencias</span>
+            </div>
+          )}
+          {(!isOwner || promotionSuggestCount === 0) && activePromoCount > 0 && (
+            <div className="promo-dash-badge" style={{ background: promoColor + '18', color: promoColor }}>
+              <span className="promo-dash-badge-count">{activePromoCount}</span>
+              <span className="promo-dash-badge-label">activas</span>
+            </div>
+          )}
+
+          <span className="promo-dash-arrow">→</span>
+        </button>
+
         {/* ── Restock card — OWNER only ── */}
         {isOwner && (
           <button
             className="restock-card"
             onClick={() => navigate('/restock')}
-            style={{
-              '--rst-color': restockCount > 0 ? '#E67E22' : '#27AE60',
-            }}
+            style={{ '--rst-color': restockCount > 0 ? '#E67E22' : '#27AE60' }}
           >
             <div className="rst-left">
               <div className="rst-icon-wrap" style={{ background: restockCount > 0 ? '#E67E22' : '#27AE60' }}>
@@ -158,14 +223,14 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
- 
+
             {restockCount > 0 && (
               <div className="rst-badge">
                 <span className="rst-badge-count">{restockCount}</span>
                 <span className="rst-badge-label">a reponer</span>
               </div>
             )}
- 
+
             <span className="rst-arrow">→</span>
           </button>
         )}
@@ -181,13 +246,25 @@ export default function DashboardPage() {
                   <p className="module-title">{m.title}</p>
                   <p className="module-desc">{m.desc}</p>
                 </div>
+                {/* Badge de sugerencias en la card de Promociones para OWNER */}
+                {m.to === '/promotions' && isOwner && promotionSuggestCount > 0 && (
+                  <span className="module-count-badge" style={{ background: '#D68910' }}>
+                    {promotionSuggestCount}
+                  </span>
+                )}
+                {/* Badge de activas en la card de Promociones para EMPLOYEE */}
+                {m.to === '/promotions' && !isOwner && activePromoCount > 0 && (
+                  <span className="module-count-badge" style={{ background: '#2E7D32' }}>
+                    {activePromoCount}
+                  </span>
+                )}
                 <span className="module-arrow">→</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* ── Gestión OWNER — solo se muestra al dueño ── */}
+        {/* ── Gestión OWNER ── */}
         {isOwner && (
           <div>
             <h2 className="section-heading">Gestión de inventario</h2>
@@ -250,31 +327,35 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Próximamente ── */}
-        <div>
-          <h2 className="section-heading">Próximamente</h2>
-          <div className="modules-grid">
-            {COMING_MODULES.map((m) => (
-              <div key={m.title} className="module-card soon">
-                <span className="module-icon">{m.icon}</span>
-                <div className="module-text">
-                  <p className="module-title">{m.title}</p>
-                  <p className="module-desc">{m.desc}</p>
+        {COMING_MODULES.length > 0 && (
+          <div>
+            <h2 className="section-heading">Próximamente</h2>
+            <div className="modules-grid">
+              {COMING_MODULES.map((m) => (
+                <div key={m.title} className="module-card soon">
+                  <span className="module-icon">{m.icon}</span>
+                  <div className="module-text">
+                    <p className="module-title">{m.title}</p>
+                    <p className="module-desc">{m.desc}</p>
+                  </div>
+                  <span className="module-badge">Próximamente</span>
                 </div>
-                <span className="module-badge">Próximamente</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
       </main>
 
       <style>{`
-       .dash-page { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
+        .dash-page { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
         .dash-main {
           max-width: 760px; margin: 0 auto;
           padding: var(--space-xl) var(--space-lg);
           display: flex; flex-direction: column; gap: var(--space-xl);
         }
+
+        /* Welcome */
         .welcome-card {
           display: flex; align-items: center; gap: var(--space-lg);
           padding: var(--space-xl); background: var(--espresso);
@@ -293,8 +374,8 @@ export default function DashboardPage() {
           display: inline-flex; align-items: center; gap: 5px;
           padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
         }
- 
-        /* ── Semaphore card ── */
+
+        /* Semaphore card */
         .semaphore-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-lg);
           padding: 18px 20px;
@@ -321,8 +402,37 @@ export default function DashboardPage() {
         .sem-dot-label  { font-size: 0.62rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
         .sem-arrow { font-size: 1.1rem; color: var(--sem-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
         .semaphore-card:hover .sem-arrow { transform: translateX(4px); }
- 
-        /* ── Restock card (OWNER only) ── */
+
+        /* Promotions card */
+        .promo-dash-card {
+          width: 100%; display: flex; align-items: center; gap: var(--space-lg);
+          padding: 18px 20px;
+          background: white; border: 2px solid var(--promo-color);
+          border-radius: var(--radius-xl); cursor: pointer; text-align: left;
+          font-family: var(--font-body);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+          transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+          animation: slideUp 0.4s ease 0.17s both;
+        }
+        .promo-dash-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
+        .promo-dash-card:active { transform: translateY(0); }
+        .promo-dash-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+        .promo-dash-icon {
+          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+        }
+        .promo-dash-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
+        .promo-dash-sub   { font-size: 0.8rem; color: var(--warm-gray); }
+        .promo-dash-badge {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          padding: 6px 12px; border-radius: 12px; flex-shrink: 0;
+        }
+        .promo-dash-badge-count { font-size: 1.3rem; font-weight: 800; line-height: 1; }
+        .promo-dash-badge-label { font-size: 0.6rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .promo-dash-arrow { font-size: 1.1rem; color: var(--promo-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
+        .promo-dash-card:hover .promo-dash-arrow { transform: translateX(4px); }
+
+        /* Restock card */
         .restock-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-lg);
           padding: 18px 20px;
@@ -331,7 +441,7 @@ export default function DashboardPage() {
           font-family: var(--font-body);
           box-shadow: 0 4px 20px rgba(0,0,0,0.06);
           transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-          animation: slideUp 0.4s ease 0.18s both;
+          animation: slideUp 0.4s ease 0.19s both;
         }
         .restock-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .restock-card:active { transform: translateY(0); }
@@ -351,8 +461,8 @@ export default function DashboardPage() {
         .rst-badge-label { font-size: 0.6rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
         .rst-arrow { font-size: 1.1rem; color: var(--rst-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
         .restock-card:hover .rst-arrow { transform: translateX(4px); }
- 
-        /* ── Module cards ── */
+
+        /* Info card */
         .info-card {
           background: white; border-radius: var(--radius-lg);
           padding: var(--space-xl); border: 1px solid var(--cream-dark);
@@ -364,11 +474,10 @@ export default function DashboardPage() {
         }
         .info-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
         .info-item  { display: flex; flex-direction: column; gap: 4px; }
-        .info-label {
-          font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
-          letter-spacing: 0.08em; color: var(--warm-gray-light);
-        }
+        .info-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warm-gray-light); }
         .info-value { font-size: 0.88rem; color: var(--espresso); font-weight: 500; }
+
+        /* Section headings & module grid */
         .section-heading {
           font-family: var(--font-display); font-size: 1rem; font-weight: 700;
           color: var(--espresso); margin-bottom: var(--space-md);
@@ -410,12 +519,13 @@ export default function DashboardPage() {
           color: var(--warm-gray-light); background: var(--cream-dark);
           padding: 3px 8px; border-radius: 10px; flex-shrink: 0;
         }
+
         @media (max-width: 480px) {
-          .info-grid { grid-template-columns: 1fr; }
+          .info-grid    { grid-template-columns: 1fr; }
           .welcome-card { flex-direction: column; text-align: center; }
-          .sem-dots { display: none; }
-          .dash-main { padding: var(--space-lg) var(--space-md); }
-          .rst-badge { display: none; }
+          .sem-dots     { display: none; }
+          .dash-main    { padding: var(--space-lg) var(--space-md); }
+          .rst-badge, .promo-dash-badge { display: none; }
         }
       `}</style>
     </div>

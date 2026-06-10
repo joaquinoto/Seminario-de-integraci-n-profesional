@@ -14,14 +14,17 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: env.VITE_API_URL,
           changeOrigin: true,
+          secure: false, //evita que Vite rechace la conexión por problemas de certificados SSL/TLS no válidos en entornos de prueba
         },
         '/auth': {
           target: env.VITE_API_URL,
           changeOrigin: true,
+          secure: false, //evita que Vite rechace la conexión por problemas de certificados SSL/TLS no válidos en entornos de prueba
         },
         '/users': {
           target: env.VITE_API_URL,
           changeOrigin: true,
+          secure: false, //evita que Vite rechace la conexión por problemas de certificados SSL/TLS no válidos en entornos de prueba
         },
       },
     },

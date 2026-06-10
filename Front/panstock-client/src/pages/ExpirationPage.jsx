@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -7,7 +7,7 @@ import {
   selectSemaphoreCounts,
   selectSemaphoreStatus,
   selectSemaphoreError,
-  clearExpirationState,         
+  clearExpirationState,
 } from '../features/stock/expirationSlice';
 import {
   deleteProduct,
@@ -16,6 +16,10 @@ import {
   selectProducts,
   fetchProducts,
 } from '../features/catalog/productsSlice';
+import {
+  autoWasteExpiredBatch,
+  selectAutoWastePending,
+} from '../features/waste/wasteSlice';
 import { selectToken, selectUser } from '../features/auth/authSlice';
 import { ConfirmDialog, TableSkeleton } from '../components/ui/CatalogUI';
 import AppTopbar from '../components/layout/AppTopbar';
@@ -38,8 +42,7 @@ function StatusPill({ status }) {
       display: 'inline-flex', alignItems: 'center', gap: 5,
       padding: '4px 11px', borderRadius: 20,
       fontSize: '0.72rem', fontWeight: 700,
-      color: cfg.color, background: cfg.bg,
-      whiteSpace: 'nowrap',
+      color: cfg.color, background: cfg.bg, whiteSpace: 'nowrap',
     }}>
       {cfg.icon} {cfg.label}
     </span>
@@ -60,11 +63,11 @@ function DaysChip({ days, status }) {
 
 function SummaryBar({ counts, activeFilter, onFilter }) {
   const pills = [
-    { key: 'ALL',    label: 'Todos',         count: counts.expired + counts.red + counts.yellow + counts.green, color: 'var(--espresso)', bg: 'var(--cream-dark)' },
-    { key: 'EXPIRED',label: 'Vencidos',      count: counts.expired, color: STATUS_CONFIG.EXPIRED.color, bg: STATUS_CONFIG.EXPIRED.bg },
-    { key: 'RED',    label: 'Vencen hoy',    count: counts.red,     color: STATUS_CONFIG.RED.color,     bg: STATUS_CONFIG.RED.bg     },
-    { key: 'YELLOW', label: 'Vencen pronto', count: counts.yellow,  color: STATUS_CONFIG.YELLOW.color,  bg: STATUS_CONFIG.YELLOW.bg  },
-    { key: 'GREEN',  label: 'En buen estado',count: counts.green,   color: STATUS_CONFIG.GREEN.color,   bg: STATUS_CONFIG.GREEN.bg   },
+    { key: 'ALL',    label: 'Todos',          count: counts.expired + counts.red + counts.yellow + counts.green, color: 'var(--espresso)', bg: 'var(--cream-dark)' },
+    { key: 'EXPIRED',label: 'Vencidos',       count: counts.expired, color: STATUS_CONFIG.EXPIRED.color, bg: STATUS_CONFIG.EXPIRED.bg },
+    { key: 'RED',    label: 'Vencen hoy',     count: counts.red,     color: STATUS_CONFIG.RED.color,     bg: STATUS_CONFIG.RED.bg     },
+    { key: 'YELLOW', label: 'Vencen pronto',  count: counts.yellow,  color: STATUS_CONFIG.YELLOW.color,  bg: STATUS_CONFIG.YELLOW.bg  },
+    { key: 'GREEN',  label: 'En buen estado', count: counts.green,   color: STATUS_CONFIG.GREEN.color,   bg: STATUS_CONFIG.GREEN.bg   },
   ];
 
   return (
@@ -110,38 +113,108 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ExpirationPage() {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
-  const token    = useSelector(selectToken);
-  const user     = useSelector(selectUser);
-  const items    = useSelector(selectSemaphoreItems);
-  const counts   = useSelector(selectSemaphoreCounts);
-  const status   = useSelector(selectSemaphoreStatus);
-  const fetchErr = useSelector(selectSemaphoreError);
+  const dispatch        = useDispatch();
+  const navigate        = useNavigate();
+  const token           = useSelector(selectToken);
+  const user            = useSelector(selectUser);
+  const items           = useSelector(selectSemaphoreItems);
+  const counts          = useSelector(selectSemaphoreCounts);
+  const status          = useSelector(selectSemaphoreStatus);
+  const fetchErr        = useSelector(selectSemaphoreError);
   const { status: actStatus } = useSelector(selectProductAction);
+  const allProducts     = useSelector(selectProducts);
+  const autoWastePending = useSelector(selectAutoWastePending);
 
-  const allProducts = useSelector(selectProducts);
+  const [activeFilter,   setActiveFilter]   = useState('ALL');
+  const [search,         setSearch]         = useState('');
+  const [confirmData,    setConfirmData]    = useState(null);
+  const [autoWasteToast, setAutoWasteToast] = useState('');
 
-  const [activeFilter, setActiveFilter] = useState('ALL');
-  const [search,       setSearch]       = useState('');
-  const [confirmData,  setConfirmData]  = useState(null);
+  // Ref de los batchIds que ya están siendo procesados en este ciclo
+  // de auto-descarte (dentro del mismo useEffect call).
+  // Se resetea con cada nuevo fetch del semáforo.
+  const processingRef = useRef(new Set());
 
-  // ── Se limpia el estado antes de fetchear ─────────────────
-  // Esto evita que Redux Persist sirva datos viejos del localStorage mientras
-  // llega la respuesta fresca del servidor.
+  // ── Fetch al montar ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
-    // Limpiar items y conteos viejos del store ANTES del fetch
     dispatch(clearExpirationState());
-    // Luego pedir datos frescos al servidor
     dispatch(fetchSemaphore({ token }));
     dispatch(fetchProducts({ token, params: { activeOnly: false } }));
   }, [token, dispatch]);
 
+  // ── AUTO-DESCARTE ─────────────────────────────────────────────────────────
+  //
+  // Regla de negocio:
+  //   - Solo lotes con daysToExpire < 0  (es decir, desde AYER hacia atrás).
+  //   - daysToExpire === 0 (vence HOY) → NO se descarta automáticamente.
+  //   - status === 'EXPIRED' implica daysToExpire < 0 en el backend.
+  //
+  // Garantía de idempotencia:
+  //   - processingRef evita llamadas simultáneas para el mismo batchId
+  //     dentro del mismo ciclo (Set en memoria, no persiste).
+  //   - autoWastePending en Redux evita que un thunk en vuelo se duplique.
+  //   - Si el semáforo devuelve el lote con stock > 0 → tiene que descartarse,
+  //     sin importar si hubo intentos previos (no bloqueamos por historia).
+  //   - El backend valida: si el lote ya está DEPLETED devuelve 400 y el
+  //     thunk.rejected lo ignora silenciosamente.
+  //   - try/finally garantiza que processingRef siempre se limpie,
+  //     incluso si algún dispatch falla inesperadamente.
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (status !== 'succeeded') return;
+
+    // Lotes con status EXPIRED (daysToExpire < 0) con stock > 0
+    // que no estén ya en proceso en este ciclo ni en un thunk en vuelo
+    const toProcess = items.filter(
+      (item) =>
+        item.status === 'EXPIRED' &&
+        item.daysToExpire != null &&
+        item.daysToExpire < 0 &&                          // estrictamente vencidos (desde ayer)
+        Number(item.currentQuantity) > 0 &&
+        !processingRef.current.has(item.batchId) &&       // no en este ciclo
+        !autoWastePending.includes(item.batchId)          // no en vuelo
+    );
+
+    if (toProcess.length === 0) return;
+
+    // Marcar como "en proceso" para este ciclo
+    toProcess.forEach((item) => processingRef.current.add(item.batchId));
+
+    const processAll = async () => {
+      try {
+        for (const item of toProcess) {
+          await dispatch(
+            autoWasteExpiredBatch({
+              token,
+              batchId:  item.batchId,
+              quantity: Number(item.currentQuantity),
+            })
+          );
+        }
+
+        // Refrescar semáforo: los lotes descartados (DEPLETED, qty=0)
+        // ya no aparecerán porque getExpired() filtra solo AVAILABLE con qty > 0
+        dispatch(clearExpirationState());
+        dispatch(fetchSemaphore({ token }));
+
+        const plural = toProcess.length !== 1;
+        setAutoWasteToast(
+          `✅ ${toProcess.length} lote${plural ? 's' : ''} vencido${plural ? 's' : ''} descartado${plural ? 's' : ''} automáticamente.`
+        );
+        setTimeout(() => setAutoWasteToast(''), 5000);
+      } finally {
+        // Siempre limpiar el set de este ciclo, incluso si hubo errores
+        processingRef.current.clear();
+      }
+    };
+
+    processAll();
+  }, [status, items, token, dispatch]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isProductActive = (productId) => {
     const found = allProducts.find((p) => p.id === productId);
-    if (!found) return true;
-    return found.active;
+    return found ? Boolean(found.active) : true;
   };
 
   const filtered = useMemo(() => {
@@ -158,7 +231,11 @@ export default function ExpirationPage() {
     const map = new Map();
     for (const item of filtered) {
       if (!map.has(item.productId)) {
-        map.set(item.productId, { productId: item.productId, productName: item.productName, batches: [] });
+        map.set(item.productId, {
+          productId:   item.productId,
+          productName: item.productName,
+          batches:     [],
+        });
       }
       map.get(item.productId).batches.push(item);
     }
@@ -175,7 +252,8 @@ export default function ExpirationPage() {
     });
   };
 
-  const deactivating = actStatus === 'loading' && confirmData !== null;
+  const deactivating     = actStatus === 'loading' && confirmData !== null;
+  const autoWasteRunning = autoWastePending.length > 0;
 
   const worstStatus = (batches) => {
     for (const s of ['EXPIRED', 'RED', 'YELLOW', 'GREEN']) {
@@ -202,31 +280,48 @@ export default function ExpirationPage() {
           <button
             className="exp-refresh-btn"
             onClick={() => {
-              // Refresh manual: limpiar + refetch
+              processingRef.current.clear();
               dispatch(clearExpirationState());
               dispatch(fetchSemaphore({ token }));
               dispatch(fetchProducts({ token, params: { activeOnly: false } }));
             }}
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || autoWasteRunning}
             title="Actualizar"
           >
-            <span className={status === 'loading' ? 'spin' : ''}>↻</span>
+            <span className={(status === 'loading' || autoWasteRunning) ? 'spin' : ''}>↻</span>
             <span className="hide-sm">Actualizar</span>
           </button>
         </div>
 
-        {/* Error */}
-        {fetchErr && <div className="exp-error">⚠ {fetchErr}</div>}
-
-        {/* Loading — mostrar skeleton mientras no hay datos frescos */}
-        {status === 'loading' && <TableSkeleton rows={6} />}
-
-        {/* Summary — solo mostrar cuando ya tenemos datos del servidor (succeeded) */}
-        {status === 'succeeded' && (
-          <SummaryBar counts={counts} activeFilter={activeFilter} onFilter={setActiveFilter} />
+        {/* Toast de confirmación */}
+        {autoWasteToast && (
+          <div className="exp-auto-toast">{autoWasteToast}</div>
         )}
 
-        {/* Search */}
+        {/* Progreso de auto-descarte */}
+        {autoWasteRunning && (
+          <div className="exp-auto-progress">
+            <span className="exp-auto-spinner" />
+            <span>Descartando lotes vencidos automáticamente…</span>
+          </div>
+        )}
+
+        {/* Error de fetch */}
+        {fetchErr && <div className="exp-error">⚠ {fetchErr}</div>}
+
+        {/* Skeleton mientras carga */}
+        {status === 'loading' && <TableSkeleton rows={6} />}
+
+        {/* Summary pills */}
+        {status === 'succeeded' && (
+          <SummaryBar
+            counts={counts}
+            activeFilter={activeFilter}
+            onFilter={setActiveFilter}
+          />
+        )}
+
+        {/* Buscador */}
         {status === 'succeeded' && items.length > 0 && (
           <div className="exp-controls">
             <div className="exp-search-wrap">
@@ -251,7 +346,7 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* Empty */}
+        {/* Estado vacío */}
         {status === 'succeeded' && filtered.length === 0 && (
           <div className="exp-empty">
             <span className="exp-empty-icon">
@@ -272,13 +367,13 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* Groups */}
+        {/* Grupos de productos */}
         {status === 'succeeded' && grouped.length > 0 && (
           <div className="exp-groups">
             {grouped.map((group) => {
-              const worst     = worstStatus(group.batches);
-              const cfg       = STATUS_CONFIG[worst] || STATUS_CONFIG.GREEN;
-              const hasUrgent = worst === 'EXPIRED' || worst === 'RED' || worst === 'YELLOW';
+              const worst       = worstStatus(group.batches);
+              const cfg         = STATUS_CONFIG[worst] || STATUS_CONFIG.GREEN;
+              const hasUrgent   = worst === 'EXPIRED' || worst === 'RED' || worst === 'YELLOW';
               const productActive = isProductActive(group.productId);
 
               return (
@@ -396,16 +491,36 @@ export default function ExpirationPage() {
           display: flex; align-items: center; gap: 6px; padding: 9px 16px;
           background: white; border: 1.5px solid var(--cream-dark);
           border-radius: var(--radius-md); font-family: var(--font-body);
-          font-size: 0.85rem; font-weight: 600; color: var(--warm-gray); cursor: pointer;
-          transition: all var(--transition-fast);
+          font-size: 0.85rem; font-weight: 600; color: var(--warm-gray);
+          cursor: pointer; transition: all var(--transition-fast);
         }
         .exp-refresh-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
         .exp-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 
+        .exp-auto-toast {
+          padding: 12px 16px; background: rgba(46,125,50,0.10);
+          border: 1.5px solid rgba(46,125,50,0.35); border-radius: var(--radius-md);
+          color: #1E6B24; font-size: 0.88rem; font-weight: 600;
+          animation: fadeIn 0.3s ease; margin-bottom: var(--space-md);
+        }
+        .exp-auto-progress {
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 16px; background: rgba(200,137,58,0.08);
+          border: 1.5px solid rgba(200,137,58,0.3); border-radius: var(--radius-md);
+          color: var(--amber-dark); font-size: 0.88rem; font-weight: 600;
+          margin-bottom: var(--space-md);
+        }
+        .exp-auto-spinner {
+          width: 16px; height: 16px; border: 2px solid var(--amber);
+          border-top-color: transparent; border-radius: 50%;
+          animation: spin 0.7s linear infinite; flex-shrink: 0;
+        }
+
         .exp-error {
           padding: 12px 16px; background: var(--error-light); border: 1px solid var(--error);
-          border-radius: var(--radius-md); color: var(--error); font-size: 0.88rem; margin-bottom: 16px;
+          border-radius: var(--radius-md); color: var(--error);
+          font-size: 0.88rem; margin-bottom: 16px;
         }
 
         .exp-controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: var(--space-lg); }
@@ -421,7 +536,8 @@ export default function ExpirationPage() {
         .exp-search:focus { border-color: var(--amber); }
         .exp-search-clear {
           position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer; color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
+          background: none; border: none; cursor: pointer;
+          color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
         }
         .exp-owner-hint {
           font-size: 0.8rem; color: var(--warm-gray); padding: 10px 14px;
@@ -440,14 +556,12 @@ export default function ExpirationPage() {
         .exp-empty-reset:hover { background: var(--cream-medium); color: var(--espresso); }
 
         .exp-groups { display: flex; flex-direction: column; gap: 10px; }
-
         .exp-group {
           background: white; border-radius: var(--radius-lg);
           border: 1.5px solid var(--group-color);
           box-shadow: 0 2px 12px rgba(0,0,0,0.04); overflow: hidden;
           animation: fadeIn 0.3s ease both;
         }
-
         .exp-group-header {
           display: flex; align-items: center; justify-content: space-between;
           gap: 12px; padding: 14px 18px; background: var(--group-bg);
@@ -463,20 +577,15 @@ export default function ExpirationPage() {
           padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
           color: #7f1d1d; background: rgba(127,29,29,0.1); white-space: nowrap;
         }
-
         .exp-group-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .exp-action-btn {
           padding: 7px 14px; border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
           cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
         }
-        .exp-action-btn.secondary {
-          background: white; border: 1.5px solid var(--cream-dark); color: var(--warm-gray);
-        }
+        .exp-action-btn.secondary { background: white; border: 1.5px solid var(--cream-dark); color: var(--warm-gray); }
         .exp-action-btn.secondary:hover { border-color: var(--espresso); color: var(--espresso); }
-        .exp-action-btn.danger {
-          background: rgba(192,57,43,0.08); border: 1.5px solid rgba(192,57,43,0.3); color: #C0392B;
-        }
+        .exp-action-btn.danger { background: rgba(192,57,43,0.08); border: 1.5px solid rgba(192,57,43,0.3); color: #C0392B; }
         .exp-action-btn.danger:hover { background: rgba(192,57,43,0.15); border-color: #C0392B; }
 
         .exp-batches { display: flex; flex-direction: column; }
@@ -486,7 +595,7 @@ export default function ExpirationPage() {
           transition: background var(--transition-fast);
         }
         .exp-batch-row:last-child { border-bottom: none; }
-        .exp-batch-row:hover      { background: var(--cream); }
+        .exp-batch-row:hover { background: var(--cream); }
         .exp-batch-left  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         .exp-batch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
         .exp-batch-date  { font-size: 0.82rem; color: var(--warm-gray); }
@@ -500,6 +609,7 @@ export default function ExpirationPage() {
           .exp-batch-left   { gap: 8px; }
           .hide-sm          { display: none; }
           .exp-content      { padding: var(--space-lg) var(--space-md); }
+          .exp-auto-progress { font-size: 0.8rem; }
         }
       `}</style>
     </div>
