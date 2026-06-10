@@ -123,13 +123,22 @@ function BreakdownBar({ items, total, colorFn }) {
 
 // ─── WasteRow ─────────────────────────────────────────────────────────────────
 //
-// Si createdByName === null → el registro fue hecho por el sistema automático.
-// En ese caso mostramos el badge rojo "Descartar lote vencido" que pide el enunciado.
+// Regla de visualización:
+//   isAutomatic = createdByName === null && createdById === null
+//   → Registro generado por el sistema al auto-descartar un lote vencido.
+//   → Muestra badge rojo "🗑️ DESCARTAR LOTE VENCIDO" en la parte superior.
+//   → En la sección expandida muestra "🤖 Sistema automático".
+//
+// Si tiene createdByName → registro manual de un usuario → muestra avatar + nombre.
 
 function WasteRow({ record, idx }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = REASON_CONFIG[record.reason] || REASON_CONFIG.OTHER;
-  const isAutomatic = !record.createdByName && !record.createdById;
+
+  // Un registro es automático cuando el backend lo creó sin usuario asociado
+  // (createdBy = null en la entidad). El mapper devuelve createdByName=null
+  // y createdById=null en ese caso.
+  const isAutomatic = record.createdByName == null && record.createdById == null;
 
   return (
     <div className="wr-wrap" style={{ animationDelay: `${idx * 0.025}s` }}>
@@ -142,10 +151,10 @@ function WasteRow({ record, idx }) {
         <div className="wr-indicator" style={{ background: cfg.color }} />
 
         <div className="wr-body">
-          {/* ── Badge automático — visible para ambos roles ── */}
+          {/* ── Badge automático — visible SOLO para registros del sistema ── */}
           {isAutomatic && (
             <div className="wr-auto-badge">
-              🗑️ Descartar lote vencido
+              🗑️ DESCARTAR LOTE VENCIDO
             </div>
           )}
 
@@ -318,12 +327,10 @@ export default function WastePage() {
   };
 
   // ── handleFormSuccess ─────────────────────────────────────────────────────
-  // Tras registrar una merma manual: recarga lista + lotes + semáforo.
   const handleFormSuccess = useCallback(() => {
     setModalOpen(false);
     loadRecords();
     dispatch(fetchBatches({ token }));
-    // Refrescar semáforo para que /expiration refleje el cambio
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
   }, [dispatch, token, loadRecords]);
@@ -868,15 +875,16 @@ export default function WastePage() {
         .wr-indicator { width: 4px; flex-shrink: 0; }
         .wr-body { flex: 1; padding: 13px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
-        /* ── Badge automático en ROJO ── */
+        /* ── Badge automático: rojo sólido, prominente ── */
         .wr-auto-badge {
           display: inline-flex; align-items: center; gap: 6px;
           padding: 5px 12px; border-radius: var(--radius-md);
           background: #C0392B; color: white;
-          font-size: 0.75rem; font-weight: 800;
-          letter-spacing: 0.04em; text-transform: uppercase;
+          font-size: 0.74rem; font-weight: 800;
+          letter-spacing: 0.05em; text-transform: uppercase;
           align-self: flex-start;
           box-shadow: 0 2px 8px rgba(192,57,43,0.30);
+          user-select: none;
         }
 
         .wr-top  { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -905,9 +913,9 @@ export default function WastePage() {
         }
         .wr-author-system {
           display: inline-flex; align-items: center; gap: 4px;
-          font-size: 0.74rem; font-weight: 600; color: #1565C0;
+          font-size: 0.74rem; font-weight: 600; color: #C0392B;
           padding: 2px 8px; border-radius: 20px;
-          background: rgba(21,101,192,0.08); border: 1px solid rgba(21,101,192,0.2);
+          background: rgba(192,57,43,0.08); border: 1px solid rgba(192,57,43,0.2);
           flex-shrink: 0;
         }
 

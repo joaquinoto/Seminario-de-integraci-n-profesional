@@ -66,14 +66,15 @@ export const createWasteRecord = createAsyncThunk(
  *
  * Registra automáticamente la merma de UN lote vencido (daysToExpire < 0).
  * userId = null → backend lo acepta como "sistema automático".
+ * created_by_id queda NULL en la BD → en /waste se muestra badge rojo
+ * "Descartar lote vencido" (createdByName === null en WasteRecordResponse).
  *
- * La idempotencia la garantiza el backend: si el lote ya está DEPLETED
- * (stock = 0), responde 400 y el rejected handler lo ignora silenciosamente.
- * La guardia en el frontend es autoWastePending (solo evita llamadas
- * simultáneas para el mismo batchId dentro de la misma sesión activa).
- * NO usamos autoWasteCompleted persistido para excluir lotes, porque
- * si una llamada anterior falló el lote seguiría en el semáforo y
- * nunca se reintentaría.
+ * Idempotencia:
+ *   - autoWastePending (solo en memoria) evita duplicar llamadas en vuelo.
+ *   - Si el lote ya está DEPLETED, el backend responde 400 → rejected se
+ *     ignora silenciosamente (no se hace rejectWithValue para que no
+ *     aparezca como error en UI).
+ *   - El processingRef en ExpirationPage evita múltiples ciclos simultáneos.
  */
 export const autoWasteExpiredBatch = createAsyncThunk(
   'waste/autoWasteExpiredBatch',
@@ -81,7 +82,7 @@ export const autoWasteExpiredBatch = createAsyncThunk(
     try {
       const data = {
         batchId,
-        userId:   null,
+        userId:   null,   // null = sistema automático → createdBy queda NULL
         quantity,
         reason:   'EXPIRED',
         notes:    'Descarte automático de lote vencido (sistema).',
@@ -92,6 +93,9 @@ export const autoWasteExpiredBatch = createAsyncThunk(
         body: JSON.stringify(data),
       }).then(handleResponse);
     } catch (e) {
+      // No propagamos el error hacia el UI: el backend devuelve 400
+      // si el lote ya está DEPLETED, lo cual es un caso esperado.
+      // rejectWithValue vacío para que el slice lo maneje silenciosamente.
       return rejectWithValue(e.message);
     }
   }
@@ -131,8 +135,8 @@ const initialState = {
   users:        [],
   usersStatus:  'idle',
   activeFilters: initialFilters,
-  // autoWastePending: guard solo para la sesión activa en memoria.
-  // Evita llamadas simultáneas para el mismo batchId.
+  // autoWastePending: guard SOLO para la sesión activa en memoria.
+  // Evita llamadas simultáneas para el mismo batchId dentro de la misma sesión.
   // NO se persiste: al recargar la página debe poder reintentar.
   autoWastePending: [],
 };
@@ -179,6 +183,10 @@ const wasteSlice = createSlice({
       .addCase(createWasteRecord.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
     // ── autoWasteExpiredBatch ──
+    // pending: agrega batchId a autoWastePending (guard en memoria)
+    // fulfilled: quita batchId de pending e inserta el registro en la lista
+    // rejected: quita batchId de pending silenciosamente
+    //   (el backend devuelve 400 si el lote ya está DEPLETED, caso esperado)
     builder
       .addCase(autoWasteExpiredBatch.pending, (s, a) => {
         const batchId = a.meta.arg.batchId;
@@ -189,11 +197,13 @@ const wasteSlice = createSlice({
       .addCase(autoWasteExpiredBatch.fulfilled, (s, a) => {
         const batchId = a.meta.arg.batchId;
         s.autoWastePending = s.autoWastePending.filter((id) => id !== batchId);
-        if (s.items && a.payload) s.items.unshift(a.payload);
+        // Insertar el registro automático al inicio de la lista si está cargada
+        if (s.items && a.payload) {
+          s.items.unshift(a.payload);
+        }
       })
       .addCase(autoWasteExpiredBatch.rejected, (s, a) => {
-        // Quitar de pending silenciosamente.
-        // El backend ya manejó el caso (lote sin stock → 400 esperado).
+        // Quitar de pending silenciosamente — error esperado (lote ya DEPLETED)
         const batchId = a.meta.arg.batchId;
         s.autoWastePending = s.autoWastePending.filter((id) => id !== batchId);
       });
