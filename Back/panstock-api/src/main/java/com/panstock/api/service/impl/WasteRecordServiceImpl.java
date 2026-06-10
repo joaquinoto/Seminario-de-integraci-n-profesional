@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 @Transactional
 public class WasteRecordServiceImpl implements WasteRecordService {
 
-    // ── Zona horaria del negocio (igual que el resto del backend) ─────────────
+    // ── Zona horaria del negocio ─────────────
     private static final ZoneId ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
     private final InventoryBatchRepository inventoryBatchRepository;
@@ -201,10 +201,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                         + "Para registrar una merma por vencimiento, el lote debe tener "
                         + "fecha de vencimiento y ésta debe ser anterior o igual a la fecha actual.");
             }
-            // FIX: usar LocalDate.now(ZONE) con zona horaria de Buenos Aires
-            // en lugar de LocalDate.now() (que usaba UTC del servidor en producción),
-            // para que el auto-descarte del frontend funcione correctamente en
-            // cualquier horario del día.
+        
             if (batch.getExpirationDate().isAfter(LocalDate.now(ZONE))) {
                 throw new BadRequestException(
                         "El lote seleccionado no está vencido (vence el "

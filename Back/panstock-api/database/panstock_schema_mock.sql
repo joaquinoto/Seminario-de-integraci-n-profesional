@@ -590,12 +590,18 @@ FROM waste_records w
 WHERE w.created_at >= DATE_SUB(NOW(), INTERVAL 6 DAY);
 
 -- =========================================================
--- VERIFICACIÓN DE MERMAS (descomentar para validar)
+-- VERIFICACIÓN RÁPIDA (descomentar para validar)
 -- =========================================================
 
--- SELECT wr.id, p.name AS producto, wr.quantity, wr.reason,
---        wr.economic_loss, u.first_name, u.last_name, wr.waste_date
--- FROM waste_records wr
--- JOIN products p ON p.id = wr.product_id
--- LEFT JOIN users u ON u.id = wr.created_by_id
--- ORDER BY wr.waste_date DESC;
+-- SELECT b.id, p.name, b.current_quantity, b.batch_status, b.expiration_date,
+--        DATEDIFF(b.expiration_date, CURDATE()) AS dias_para_vencer,
+--        CASE
+--          WHEN b.expiration_date IS NULL                    THEN 'NOT_APPLICABLE'
+--          WHEN DATEDIFF(b.expiration_date, CURDATE()) < 0  THEN 'EXPIRED'
+--          WHEN DATEDIFF(b.expiration_date, CURDATE()) = 0  THEN 'RED'
+--          WHEN DATEDIFF(b.expiration_date, CURDATE()) <= 2 THEN 'YELLOW'
+--          ELSE                                                   'GREEN'
+--        END AS expiration_status_esperado
+-- FROM inventory_batches b
+-- JOIN products p ON p.id = b.product_id
+-- ORDER BY b.expiration_date IS NULL, DATEDIFF(b.expiration_date, CURDATE()) ASC;

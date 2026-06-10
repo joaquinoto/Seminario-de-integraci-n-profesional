@@ -13,11 +13,6 @@ import {
 import { selectToken, selectUser } from '../../features/auth/authSlice';
 import { Alert } from '../ui/FormField';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-//
-// EXPIRED se eliminó de las opciones manuales:
-// el sistema lo registra automáticamente al abrir /expiration.
-// El operador solo registra causas que el sistema no puede detectar.
 
 const WASTE_REASONS = [
   { value: 'DAMAGED',              label: '💥 Dañado / Roto'       },
@@ -186,7 +181,7 @@ export default function WasteForm({ onSuccess, onCancel }) {
     if (status === 'succeeded') setShowSuccess(true);
   }, [status]);
 
-  // ── Lotes disponibles: AVAILABLE con stock > 0, sin vencidos ────────────
+  // ── Lotes disponibles: AVAILABLE con stock > 0 ────────────
   // Los lotes EXPIRED los maneja el sistema automáticamente.
   // El form manual solo muestra lotes NO vencidos (AVAILABLE con stock > 0
   // y expirationStatus distinto de EXPIRED).
