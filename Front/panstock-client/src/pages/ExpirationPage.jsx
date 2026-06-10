@@ -145,8 +145,7 @@ export default function ExpirationPage() {
 
   // ── AUTO-DESCARTE ─────────────────────────────────────────────────────────
   //
-  // Regla de negocio:
-  //   - Solo lotes con daysToExpire < 0  (es decir, desde AYER hacia atrás).
+  //   - Solo lotes con daysToExpire < 0  (es decir, contando desde AYER hacia atrás).
   //   - daysToExpire === 0 (vence HOY) → NO se descarta automáticamente.
   //   - status === 'EXPIRED' implica daysToExpire < 0 en el backend.
   //
