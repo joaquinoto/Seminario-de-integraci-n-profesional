@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectIsAuthenticated, selectToken, logout } from './features/auth/authSlice';
+import {
+  selectShouldShowAutoWasteModal,
+} from './features/waste/autoWasteNotificationSlice';
 import ProtectedRoute  from './components/ProtectedRoute';
 import LoginPage       from './pages/LoginPage';
 import RegisterPage    from './pages/RegisterPage';
@@ -14,6 +17,7 @@ import StockPage       from './pages/StockPage';
 import WastePage       from './pages/WastePage';
 import Restockpage     from './pages/RestockPage';
 import PromotionsPage  from './pages/PromotionsPage';
+import AutoWasteModal  from './components/AutoWasteModal';
 
 /**
  * TokenGuard — verifica en cada render si el JWT del store sigue vigente.
@@ -42,12 +46,61 @@ function TokenGuard() {
   return null;
 }
 
+/**
+ * AutoWasteModalController
+ *
+ * Se monta dentro del Router para poder usar useLocation().
+ * Controla cuándo se muestra el AutoWasteModal:
+ *
+ * - Aparece cuando `shouldShow` es true (hay lotes auto-descartados hoy
+ *   y el usuario no confirmó aún).
+ * - Se oculta temporalmente al hacer clic fuera del modal (dismiss).
+ * - Reaparece CADA VEZ que la ruta cambia, hasta que el usuario confirme.
+ * - No aparece en rutas de auth (/login, /register).
+ */
+function AutoWasteModalController() {
+  const location     = useLocation();
+  const isAuth       = useSelector(selectIsAuthenticated);
+  const shouldShow   = useSelector(selectShouldShowAutoWasteModal);
+  const [visible, setVisible] = useState(false);
+
+  const isAuthRoute =
+    location.pathname === '/login' ||
+    location.pathname === '/register';
+
+  // Cada vez que cambia la ruta y hay lotes pendientes, volver a mostrar
+  useEffect(() => {
+    if (!isAuth || isAuthRoute) {
+      setVisible(false);
+      return;
+    }
+    if (shouldShow) {
+      // Pequeño delay para no interrumpir la transición de ruta
+      const t = setTimeout(() => setVisible(true), 350);
+      return () => clearTimeout(t);
+    } else {
+      setVisible(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, shouldShow, isAuth]);
+
+  if (!visible || !shouldShow || !isAuth || isAuthRoute) return null;
+
+  return (
+    <AutoWasteModal
+      onDismiss={() => setVisible(false)}
+    />
+  );
+}
+
 export default function App() {
   const isAuth = useSelector(selectIsAuthenticated);
 
   return (
     <>
       <TokenGuard />
+      <AutoWasteModalController />
+
       <Routes>
         {/* ── Rutas públicas ─────────────────────────────────────────────── */}
         <Route

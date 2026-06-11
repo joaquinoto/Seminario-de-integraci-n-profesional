@@ -5,16 +5,17 @@ import {
 } from 'redux-persist';
 import storage from 'redux-persist/es/storage';
 
-import authReducer          from '../features/auth/authSlice';
-import categoriesReducer    from '../features/catalog/categoriesSlice';
-import productsReducer      from '../features/catalog/productsSlice';
-import suppliersReducer     from '../features/catalog/suppliersSlice';
-import expirationReducer    from '../features/stock/expirationSlice';
-import stockReducer         from '../features/stock/stockSlice';
-import wasteReducer         from '../features/waste/wasteSlice';
-import notificationsReducer from '../features/notifications/notificationsSlice';
-import restockReducer       from '../features/stock/restockSlice';
-import promotionsReducer    from '../features/promotions/promotionsSlice';
+import authReducer                  from '../features/auth/authSlice';
+import categoriesReducer            from '../features/catalog/categoriesSlice';
+import productsReducer              from '../features/catalog/productsSlice';
+import suppliersReducer             from '../features/catalog/suppliersSlice';
+import expirationReducer            from '../features/stock/expirationSlice';
+import stockReducer                 from '../features/stock/stockSlice';
+import wasteReducer                 from '../features/waste/wasteSlice';
+import notificationsReducer         from '../features/notifications/notificationsSlice';
+import restockReducer               from '../features/stock/restockSlice';
+import promotionsReducer            from '../features/promotions/promotionsSlice';
+import autoWasteNotificationReducer from '../features/waste/autoWasteNotificationSlice';
 
 const authPersistConfig = {
   key: 'panstock-auth', storage,
@@ -38,11 +39,6 @@ const suppliersPersistConfig = {
 
 const wastePersistConfig = {
   key: 'panstock-waste', storage,
-  // Solo se persiste 'users' (lista de usuarios para el filtro de mermas).
-  // autoWasteCompleted fue eliminado: persistirlo causaba que lotes cuyo
-  // auto-descarte había fallado nunca se reintentaran al recargar la página.
-  // La idempotencia del auto-descarte la garantiza el backend (si el lote
-  // ya está DEPLETED devuelve 400 y el frontend lo ignora silenciosamente).
   whitelist: ['users'],
 };
 
@@ -57,17 +53,29 @@ const notificationsPersistConfig = {
   ],
 };
 
+/**
+ * autoWasteNotification persiste los lotes auto-descartados del día
+ * y si el usuario confirmó el descarte físico.
+ * Persiste todo el slice (dateKey, confirmedForDate, batches) para que
+ * sobreviva recargas de página durante el mismo día.
+ */
+const autoWasteNotificationPersistConfig = {
+  key: 'panstock-auto-waste-notification', storage,
+  // whitelist vacío = persiste todo el estado del slice
+};
+
 const appReducer = combineReducers({
-  auth:          persistReducer(authPersistConfig,          authReducer),
-  categories:    persistReducer(categoriesPersistConfig,    categoriesReducer),
-  products:      persistReducer(productsPersistConfig,      productsReducer),
-  suppliers:     persistReducer(suppliersPersistConfig,     suppliersReducer),
-  expiration:    expirationReducer,
-  stock:         stockReducer,
-  waste:         persistReducer(wastePersistConfig,         wasteReducer),
-  notifications: persistReducer(notificationsPersistConfig, notificationsReducer),
-  restock:       restockReducer,
-  promotions:    promotionsReducer,
+  auth:                  persistReducer(authPersistConfig,                  authReducer),
+  categories:            persistReducer(categoriesPersistConfig,            categoriesReducer),
+  products:              persistReducer(productsPersistConfig,              productsReducer),
+  suppliers:             persistReducer(suppliersPersistConfig,             suppliersReducer),
+  expiration:            expirationReducer,
+  stock:                 stockReducer,
+  waste:                 persistReducer(wastePersistConfig,                 wasteReducer),
+  notifications:         persistReducer(notificationsPersistConfig,         notificationsReducer),
+  restock:               restockReducer,
+  promotions:            promotionsReducer,
+  autoWasteNotification: persistReducer(autoWasteNotificationPersistConfig, autoWasteNotificationReducer),
 });
 
 const rootReducer = (state, action) => {

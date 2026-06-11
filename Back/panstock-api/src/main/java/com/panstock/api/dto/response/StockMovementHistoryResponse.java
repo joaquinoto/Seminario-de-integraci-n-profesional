@@ -1,7 +1,5 @@
 package com.panstock.api.dto.response;
-
 import com.panstock.api.enums.StockMovementType;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -13,6 +11,7 @@ public record StockMovementHistoryResponse(
         Long userId,
         StockMovementType movementType,
         BigDecimal quantity,
+        BigDecimal unitSalePrice,
         LocalDateTime movementDate,
         Long relatedWasteRecordId,
         String notes

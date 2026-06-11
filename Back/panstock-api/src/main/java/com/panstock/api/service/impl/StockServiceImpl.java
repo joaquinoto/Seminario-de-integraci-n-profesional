@@ -126,14 +126,18 @@ public class StockServiceImpl implements StockService {
             }
             inventoryBatchRepository.save(batch);
 
+            // ── Resolver el precio unitario de venta a registrar ──────────────
+            // Prioridad: 1) precio del request (puede ser promo), 2) precio del lote, 3) precio del producto
+            BigDecimal unitSalePrice = resolveUnitSalePrice(request.unitSalePrice(), batch, product);
+
             StockMovement movement = new StockMovement();
             movement.setProduct(product);
             movement.setBatch(batch);
             movement.setUser(user);
             movement.setMovementType(StockMovementType.SALE);
             movement.setQuantity(toDiscount);
-            movement.setNotes("Venta manual"
-                    + (request.notes() != null ? ": " + request.notes() : ""));
+            movement.setUnitSalePrice(unitSalePrice);
+            movement.setNotes(buildSaleNotes(request.notes(), unitSalePrice, request.unitSalePrice()));
             createdMovements.add(stockMovementRepository.save(movement));
 
             remainingQuantity = remainingQuantity.subtract(toDiscount);
@@ -261,7 +265,6 @@ public class StockServiceImpl implements StockService {
                 .toList();
     }
 
-
     @Override
     @Transactional(readOnly = true)
     public List<ExpirationItemResponse> getExpired() {
@@ -289,6 +292,45 @@ public class StockServiceImpl implements StockService {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Resuelve el precio unitario de venta a registrar en el movimiento.
+     *
+     * Prioridad:
+     *   1. unitSalePrice del request (enviado por el frontend; incluye precio de promo si aplica)
+     *   2. unitSalePrice del lote (precio fijado al ingresar el lote)
+     *   3. salePrice del producto (precio de referencia del catálogo)
+     *   4. null si ninguno está disponible
+     */
+    private BigDecimal resolveUnitSalePrice(BigDecimal requestPrice,
+                                             InventoryBatch batch,
+                                             Product product) {
+        if (requestPrice != null && requestPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return requestPrice;
+        }
+        if (batch.getUnitSalePrice() != null
+                && batch.getUnitSalePrice().compareTo(BigDecimal.ZERO) > 0) {
+            return batch.getUnitSalePrice();
+        }
+        if (product.getSalePrice() != null
+                && product.getSalePrice().compareTo(BigDecimal.ZERO) > 0) {
+            return product.getSalePrice();
+        }
+        return null;
+    }
+
+    /**
+     * Construye la nota del movimiento de venta.
+     * Si el precio del request difiere del precio base (implica promo aplicada),
+     * agrega una anotación explicativa.
+     */
+    private String buildSaleNotes(String userNotes, BigDecimal resolvedPrice, BigDecimal requestPrice) {
+        StringBuilder sb = new StringBuilder("Venta manual");
+        if (userNotes != null && !userNotes.isBlank()) {
+            sb.append(": ").append(userNotes.trim());
+        }
+        return sb.toString();
+    }
 
     private void validateStockEntry(Product product, StockEntryRequest request) {
         validateProductCanMoveStock(product);

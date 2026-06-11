@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import {
   fetchPromotionSuggestions,
   fetchPromotions,
@@ -63,23 +64,14 @@ const formatDateTime = (dt) => {
   });
 };
 
-// Calcular precio con descuento
 const calcDiscountedPrice = (originalPrice, discountPct) => {
   if (!originalPrice || !discountPct) return null;
   return parseFloat(originalPrice) * (1 - parseFloat(discountPct) / 100);
 };
 
-// Zona horaria Buenos Aires: fecha actual en ISO
-const todayBsAs = () => {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
-  return d.toISOString().split('T')[0];
-};
-
-// Fecha/hora actual en Buenos Aires como LocalDateTime string para el backend
 const nowBsAsISO = (addHours = 0) => {
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   d.setHours(d.getHours() + addHours);
-  // Formato: "2025-06-01T10:30:00"
   return d.toISOString().slice(0, 19);
 };
 
@@ -128,11 +120,8 @@ function DiscountChip({ promotion }) {
 }
 
 // ─── SuggestionCard ──────────────────────────────────────────────────────────
-function SuggestionCard({ suggestion, onActivate, activating }) {
+function SuggestionCard({ suggestion, onActivate, activating, highlighted, cardRef }) {
   const expCfg = EXPIRATION_STATUS_CONFIG[suggestion.expirationStatus] || EXPIRATION_STATUS_CONFIG.YELLOW;
-  const discountedPrice = suggestion.suggestedDiscountPercentage
-    ? calcDiscountedPrice(null, suggestion.suggestedDiscountPercentage)
-    : null;
 
   const daysLabel = suggestion.daysToExpire === 0
     ? 'Vence HOY'
@@ -141,7 +130,11 @@ function SuggestionCard({ suggestion, onActivate, activating }) {
       : `Vence en ${suggestion.daysToExpire} días`;
 
   return (
-    <div className="sg-card" style={{ '--exp-color': expCfg.color }}>
+    <div
+      ref={cardRef}
+      className={`sg-card ${highlighted ? 'sg-highlighted' : ''}`}
+      style={{ '--exp-color': expCfg.color }}
+    >
       {/* Urgency bar */}
       <div className="sg-urgency-bar" style={{ background: expCfg.color }} />
 
@@ -156,6 +149,9 @@ function SuggestionCard({ suggestion, onActivate, activating }) {
               </span>
               <span className="sg-stock-chip">
                 📦 {Number(suggestion.currentQuantity).toLocaleString('es-AR')} u. en stock
+              </span>
+              <span className="sg-batch-chip">
+                Lote #{suggestion.batchId}
               </span>
             </div>
           </div>
@@ -198,9 +194,21 @@ function SuggestionCard({ suggestion, onActivate, activating }) {
           border: 1.5px solid var(--exp-color, #D68910);
           box-shadow: var(--shadow-sm); overflow: hidden;
           animation: fadeIn 0.3s ease both;
-          transition: box-shadow var(--transition-fast);
+          transition: box-shadow var(--transition-fast), border-width 0.2s;
         }
         .sg-card:hover { box-shadow: var(--shadow-md); }
+
+        /* Highlight cuando se llega desde /expiration */
+        .sg-highlighted {
+          border-width: 2.5px;
+          box-shadow: 0 0 0 4px rgba(200,137,58,0.20), var(--shadow-md);
+          animation: highlightPulse 1.8s ease 3;
+        }
+        @keyframes highlightPulse {
+          0%,100% { box-shadow: 0 0 0 4px rgba(200,137,58,0.20), var(--shadow-md); }
+          50%      { box-shadow: 0 0 0 8px rgba(200,137,58,0.10), var(--shadow-lg); }
+        }
+
         .sg-urgency-bar { width: 4px; flex-shrink: 0; background: var(--exp-color); }
         .sg-body { flex: 1; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 
@@ -208,11 +216,12 @@ function SuggestionCard({ suggestion, onActivate, activating }) {
         .sg-product-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
         .sg-product-name { font-weight: 700; font-size: 0.96rem; color: var(--espresso); }
         .sg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-        .sg-exp-chip, .sg-stock-chip {
+        .sg-exp-chip, .sg-stock-chip, .sg-batch-chip {
           display: inline-flex; align-items: center; gap: 4px;
           padding: 3px 9px; border-radius: 20px; font-size: 0.73rem; font-weight: 600;
         }
         .sg-stock-chip { background: var(--cream-dark); color: var(--warm-gray); }
+        .sg-batch-chip { background: rgba(28,17,8,0.06); color: var(--warm-gray); }
 
         .sg-discount-badge {
           display: flex; flex-direction: column; align-items: center;
@@ -251,9 +260,14 @@ function SuggestionCard({ suggestion, onActivate, activating }) {
 }
 
 // ─── PromotionCard ────────────────────────────────────────────────────────────
-function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser }) {
-  const [expanded, setExpanded] = useState(false);
+function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlighted, cardRef, defaultExpanded }) {
+  const [expanded, setExpanded] = useState(defaultExpanded || false);
   const cfg = PROMOTION_STATUS_CONFIG[promotion.status] || PROMOTION_STATUS_CONFIG.EXPIRED;
+
+  // Abrir automáticamente si viene con highlight
+  useEffect(() => {
+    if (highlighted) setExpanded(true);
+  }, [highlighted]);
 
   const daysLabel = promotion.daysToExpire != null
     ? promotion.daysToExpire === 0 ? 'Vence HOY'
@@ -270,14 +284,22 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser }) {
     : null;
 
   return (
-    <div className={`pc-card ${promotion.status.toLowerCase()}`}>
+    <div
+      ref={cardRef}
+      className={`pc-card ${promotion.status.toLowerCase()} ${highlighted ? 'pc-highlighted' : ''}`}
+    >
       <div className="pc-header" onClick={() => setExpanded((v) => !v)} role="button" aria-expanded={expanded}>
         <div className="pc-indicator" style={{ background: cfg.color }} />
         <div className="pc-main">
           <div className="pc-row1">
             <div className="pc-name-group">
               <span className="pc-title">{promotion.title}</span>
-              <span className="pc-product">{promotion.productName}</span>
+              <span className="pc-product">
+                {promotion.productName}
+                {promotion.batchId && (
+                  <span style={{ color: 'var(--warm-gray-light)', fontWeight: 400 }}> · Lote #{promotion.batchId}</span>
+                )}
+              </span>
             </div>
             <div className="pc-badges">
               <StatusBadge status={promotion.status} />
@@ -365,7 +387,6 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser }) {
             </div>
           </div>
 
-          {/* Solo OWNER puede cancelar y solo si está ACTIVE */}
           {isOwnerUser && promotion.status === 'ACTIVE' && (
             <button
               className="pc-cancel-btn"
@@ -389,6 +410,17 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser }) {
         .pc-card:hover { box-shadow: var(--shadow-md); }
         .pc-card.cancelled { opacity: 0.65; }
         .pc-card.expired   { opacity: 0.70; }
+
+        /* Highlight cuando se llega desde /expiration */
+        .pc-highlighted {
+          border-color: #2E7D32; border-width: 2.5px;
+          box-shadow: 0 0 0 4px rgba(46,125,50,0.15), var(--shadow-md);
+          animation: highlightPulseGreen 1.8s ease 3;
+        }
+        @keyframes highlightPulseGreen {
+          0%,100% { box-shadow: 0 0 0 4px rgba(46,125,50,0.15), var(--shadow-md); }
+          50%      { box-shadow: 0 0 0 8px rgba(46,125,50,0.08), var(--shadow-lg); }
+        }
 
         .pc-header {
           display: flex; align-items: stretch; cursor: pointer;
@@ -459,14 +491,13 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser }) {
   );
 }
 
-// ─── CreatePromotionModal ─────────────────────────────────────────────────────
+// ─── CreatePromotionForm ──────────────────────────────────────────────────────
 function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
   const dispatch = useDispatch();
   const token    = useSelector(selectToken);
   const user     = useSelector(selectUser);
   const { status, error } = useSelector(selectPromotionAction);
 
-  // Valores iniciales desde la sugerencia
   const [form, setForm] = useState({
     title:              suggestion?.suggestedTitle || '',
     description:        '',
@@ -475,7 +506,6 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
                           ? String(suggestion.suggestedDiscountPercentage)
                           : '10',
     promotionalPrice:   '',
-    // Inicio: ahora en Buenos Aires; fin: fecha de vencimiento del lote a las 23:59
     startDate: nowBsAsISO(0),
     endDate:   suggestion?.expirationDate
                  ? suggestion.expirationDate + 'T23:59:00'
@@ -483,7 +513,6 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
   });
   const [fieldErrors, setFE] = useState({});
 
-  // Auto-cerrar al éxito
   useEffect(() => {
     if (status === 'succeeded') {
       dispatch(clearPromotionActionState());
@@ -553,6 +582,10 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
           <div className="cpf-ctx-row">
             <span className="cpf-ctx-label">Producto</span>
             <span className="cpf-ctx-val">{suggestion.productName}</span>
+          </div>
+          <div className="cpf-ctx-row">
+            <span className="cpf-ctx-label">Lote</span>
+            <span className="cpf-ctx-val">#{suggestion.batchId}</span>
           </div>
           <div className="cpf-ctx-row">
             <span className="cpf-ctx-label">Stock disponible</span>
@@ -790,22 +823,42 @@ export default function PromotionsPage() {
   const dispatch    = useDispatch();
   const token       = useSelector(selectToken);
   const user        = useSelector(selectUser);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const promotions       = useSelector(selectPromotions);
-  const listStatus       = useSelector(selectPromotionsStatus);
-  const listError        = useSelector(selectPromotionsError);
-  const suggestions      = useSelector(selectPromotionSuggestions);
+  const promotions        = useSelector(selectPromotions);
+  const listStatus        = useSelector(selectPromotionsStatus);
+  const listError         = useSelector(selectPromotionsError);
+  const suggestions       = useSelector(selectPromotionSuggestions);
   const suggestionsStatus = useSelector(selectSuggestionsStatus);
-  const suggestionsError = useSelector(selectSuggestionsError);
+  const suggestionsError  = useSelector(selectSuggestionsError);
   const { status: actionStatus, error: actionError } = useSelector(selectPromotionAction);
 
   const ownerUser = isOwner(user);
 
-  const [activeTab,          setActiveTab]         = useState(ownerUser ? 'suggestions' : 'active');
-  const [modalSuggestion,    setModalSuggestion]    = useState(null);  // sugerencia que se está dando de alta
-  const [confirmCancelItem,  setConfirmCancelItem]  = useState(null);  // promoción a cancelar
-  const [search,             setSearch]             = useState('');
-  const [statusFilter,       setStatusFilter]       = useState('');
+  // ── Leer query params de entrada ──────────────────────────────────────────
+  // ?tab=suggestions&batchId=22   → viene de "Activar promo" en /expiration
+  // ?tab=active&promoId=5         → viene de "Ver promo"     en /expiration
+  const qTab     = searchParams.get('tab');      // 'suggestions' | 'active' | 'all'
+  const qBatchId = searchParams.get('batchId');  // número como string
+  const qPromoId = searchParams.get('promoId');  // número como string
+
+  // Tab inicial: prioridad query param → default según rol
+  const resolveInitialTab = () => {
+    if (qTab === 'suggestions' && ownerUser) return 'suggestions';
+    if (qTab === 'active')                   return 'active';
+    if (qTab === 'all')                      return 'all';
+    return ownerUser ? 'suggestions' : 'active';
+  };
+
+  const [activeTab,          setActiveTab]         = useState(resolveInitialTab);
+  const [modalSuggestion,    setModalSuggestion]   = useState(null);
+  const [confirmCancelItem,  setConfirmCancelItem] = useState(null);
+  const [search,             setSearch]            = useState('');
+  const [statusFilter,       setStatusFilter]      = useState('');
+
+  // Refs para scroll hacia el elemento resaltado
+  const highlightedSuggestionRef = useRef(null);
+  const highlightedPromoRef      = useRef(null);
 
   // ── Cargar datos al montar ─────────────────────────────────────────────────
   useEffect(() => {
@@ -815,6 +868,39 @@ export default function PromotionsPage() {
       dispatch(fetchPromotionSuggestions({ token }));
     }
   }, [token, ownerUser, dispatch]);
+
+  // ── Scroll al elemento resaltado una vez que los datos estén listos ────────
+  useEffect(() => {
+    if (qBatchId && suggestionsStatus === 'succeeded' && activeTab === 'suggestions') {
+      // Pequeño delay para que React haya renderizado los cards
+      const timer = setTimeout(() => {
+        highlightedSuggestionRef.current?.scrollIntoView({
+          behavior: 'smooth', block: 'center',
+        });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [qBatchId, suggestionsStatus, activeTab]);
+
+  useEffect(() => {
+    if (qPromoId && listStatus === 'succeeded' && activeTab === 'active') {
+      const timer = setTimeout(() => {
+        highlightedPromoRef.current?.scrollIntoView({
+          behavior: 'smooth', block: 'center',
+        });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [qPromoId, listStatus, activeTab]);
+
+  // ── Limpiar query params al cambiar de tab manualmente ────────────────────
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    // Solo limpiar si había params de navegación externos
+    if (qTab || qBatchId || qPromoId) {
+      setSearchParams({});
+    }
+  };
 
   // ── Refresh ───────────────────────────────────────────────────────────────
   const refresh = useCallback(() => {
@@ -839,13 +925,11 @@ export default function PromotionsPage() {
     return list;
   }, [promotions, statusFilter, search]);
 
-  // Solo activas para la tab de empleados / vista activa
   const activePromotions = useMemo(
     () => promotions.filter((p) => p.status === 'ACTIVE'),
     [promotions]
   );
 
-  // Estadísticas rápidas
   const stats = useMemo(() => ({
     total:     promotions.length,
     active:    promotions.filter((p) => p.status === 'ACTIVE').length,
@@ -862,8 +946,9 @@ export default function PromotionsPage() {
   const handleCreateSuccess = () => {
     setModalSuggestion(null);
     refresh();
-    // Cambiar a la tab de todas para ver la recién creada
     setActiveTab('all');
+    // Limpiar query params si los había
+    if (qTab || qBatchId) setSearchParams({});
   };
 
   const handleCancelConfirm = () => {
@@ -890,12 +975,24 @@ export default function PromotionsPage() {
         { key: 'all',    label: '📋 Todas' },
       ];
 
-  // Lista a mostrar según tab
-  const displayList = activeTab === 'active'
-    ? activePromotions
-    : activeTab === 'all'
-      ? filteredPromotions
-      : []; // suggestions tab muestra cards distintas
+  // ── Banner informativo cuando se llega desde /expiration ─────────────────
+  const fromExpirationBanner = (qBatchId || qPromoId) && (
+    <div className="promo-from-expiration-banner">
+      <span>⏰</span>
+      <p>
+        {qBatchId
+          ? 'Llegaste desde Vencimientos. La sugerencia para el lote seleccionado está resaltada abajo.'
+          : 'Llegaste desde Vencimientos. La promoción activa del lote está resaltada abajo.'}
+      </p>
+      <button
+        className="promo-banner-close"
+        onClick={() => setSearchParams({})}
+        title="Cerrar aviso"
+      >
+        ✕
+      </button>
+    </div>
+  );
 
   return (
     <div className="promo-page">
@@ -923,6 +1020,9 @@ export default function PromotionsPage() {
             <span className={isRefreshing ? 'spin' : ''}>↻</span>
           </button>
         </div>
+
+        {/* Banner de navegación desde /expiration */}
+        {fromExpirationBanner}
 
         {/* ── Info banner para employees ── */}
         {!ownerUser && (
@@ -968,7 +1068,7 @@ export default function PromotionsPage() {
             <button
               key={tab.key}
               className={`promo-tab ${activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
             >
               {tab.label}
             </button>
@@ -994,6 +1094,9 @@ export default function PromotionsPage() {
                   No hay lotes próximos a vencer sin promoción activa.
                   Las sugerencias aparecen automáticamente cuando el stock
                   se acerca a su fecha de vencimiento.
+                  {qBatchId && (
+                    <strong> El lote #{qBatchId} ya tiene una promoción activa o no está próximo a vencer.</strong>
+                  )}
                 </p>
                 <p className="promo-empty-hint">
                   El umbral de días se configura en <strong>Ajustes → Días de sugerencia de promoción</strong>.
@@ -1011,14 +1114,19 @@ export default function PromotionsPage() {
                   </p>
                 </div>
                 <div className="promo-suggestions-list">
-                  {suggestions.map((sg, i) => (
-                    <SuggestionCard
-                      key={sg.batchId}
-                      suggestion={sg}
-                      onActivate={handleActivateSuggestion}
-                      activating={false}
-                    />
-                  ))}
+                  {suggestions.map((sg) => {
+                    const isHighlighted = qBatchId && String(sg.batchId) === String(qBatchId);
+                    return (
+                      <SuggestionCard
+                        key={sg.batchId}
+                        suggestion={sg}
+                        onActivate={handleActivateSuggestion}
+                        activating={false}
+                        highlighted={isHighlighted}
+                        cardRef={isHighlighted ? highlightedSuggestionRef : null}
+                      />
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -1044,7 +1152,7 @@ export default function PromotionsPage() {
                 {ownerUser && (
                   <button
                     className="promo-go-suggestions"
-                    onClick={() => setActiveTab('suggestions')}
+                    onClick={() => handleTabChange('suggestions')}
                   >
                     Ver sugerencias
                   </button>
@@ -1054,15 +1162,21 @@ export default function PromotionsPage() {
 
             {listStatus === 'succeeded' && activePromotions.length > 0 && (
               <div className="promo-list">
-                {activePromotions.map((p, i) => (
-                  <PromotionCard
-                    key={p.id}
-                    promotion={p}
-                    onCancel={setConfirmCancelItem}
-                    cancelling={isCancelling && confirmCancelItem?.id === p.id}
-                    isOwnerUser={ownerUser}
-                  />
-                ))}
+                {activePromotions.map((p) => {
+                  const isHighlighted = qPromoId && String(p.id) === String(qPromoId);
+                  return (
+                    <PromotionCard
+                      key={p.id}
+                      promotion={p}
+                      onCancel={setConfirmCancelItem}
+                      cancelling={isCancelling && confirmCancelItem?.id === p.id}
+                      isOwnerUser={ownerUser}
+                      highlighted={isHighlighted}
+                      cardRef={isHighlighted ? highlightedPromoRef : null}
+                      defaultExpanded={isHighlighted}
+                    />
+                  );
+                })}
               </div>
             )}
           </>
@@ -1073,7 +1187,6 @@ export default function PromotionsPage() {
             ════════════════════════════════════════════════ */}
         {activeTab === 'all' && (
           <>
-            {/* Controles de búsqueda y filtro */}
             {promotions.length > 0 && (
               <div className="promo-controls">
                 <div className="promo-search-wrap">
@@ -1137,6 +1250,8 @@ export default function PromotionsPage() {
                       onCancel={setConfirmCancelItem}
                       cancelling={isCancelling && confirmCancelItem?.id === p.id}
                       isOwnerUser={ownerUser}
+                      highlighted={false}
+                      cardRef={null}
                     />
                   ))}
                 </div>
@@ -1183,7 +1298,7 @@ export default function PromotionsPage() {
           title="Cancelar promoción"
           message={
             confirmCancelItem
-              ? `¿Cancelar la promoción "${confirmCancelItem.title}"? Esta acción no se puede deshacer. La promoción dejará de ser visible como activa.`
+              ? `¿Cancelar la promoción "${confirmCancelItem.title}"? Esta acción no se puede deshacer.`
               : ''
           }
           confirmLabel="Sí, cancelar"
@@ -1218,6 +1333,24 @@ export default function PromotionsPage() {
         .promo-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 
+        /* Banner desde /expiration */
+        .promo-from-expiration-banner {
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 11px 14px; border-radius: var(--radius-md);
+          background: rgba(200,137,58,0.08); border: 1.5px solid rgba(200,137,58,0.3);
+          animation: fadeIn 0.3s ease;
+        }
+        .promo-from-expiration-banner p {
+          flex: 1; font-size: 0.82rem; color: var(--warm-gray); line-height: 1.5; margin: 0;
+        }
+        .promo-banner-close {
+          background: none; border: none; cursor: pointer;
+          color: var(--warm-gray); font-size: 0.8rem; padding: 2px 6px;
+          border-radius: 4px; flex-shrink: 0;
+          transition: color var(--transition-fast);
+        }
+        .promo-banner-close:hover { color: var(--espresso); }
+
         /* Info banner */
         .promo-info-banner {
           display: flex; gap: 10px; align-items: flex-start;
@@ -1234,10 +1367,7 @@ export default function PromotionsPage() {
         }
         .pst-item  { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
         .pst-value { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; color: var(--espresso); line-height: 1; }
-        .pst-label {
-          font-size: 0.65rem; color: var(--warm-gray); font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.06em;
-        }
+        .pst-label { font-size: 0.65rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
         .pst-sep { width: 1px; height: 34px; background: var(--cream-dark); flex-shrink: 0; margin: 0 4px; }
 
         /* Tabs */

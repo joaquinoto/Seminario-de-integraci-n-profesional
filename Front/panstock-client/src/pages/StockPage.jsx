@@ -11,7 +11,6 @@ import {
 import { selectToken } from '../features/auth/authSlice';
 import { Modal, TableSkeleton } from '../components/ui/CatalogUI';
 import StockEntryForm from '../components/stock/StockEntryForm';
-import StockSaleForm  from '../components/stock/StockSaleForm';
 import AppTopbar from '../components/layout/AppTopbar';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -240,11 +239,10 @@ export default function StockPage() {
   const batches       = useSelector(selectBatches);
   const batchesStatus = useSelector(selectBatchesStatus);
 
-  // 'entry' | 'sale' | null
-  const [activeModal, setActiveModal]  = useState(null);
-  const [view,        setView]         = useState('summary');
-  const [search,      setSearch]       = useState('');
-  const [statusFilter,setStatusFilter] = useState('AVAILABLE');
+  const [modalOpen,   setModalOpen]   = useState(false);
+  const [view,        setView]        = useState('summary');
+  const [search,      setSearch]      = useState('');
+  const [statusFilter,setStatusFilter]= useState('AVAILABLE');
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -291,7 +289,7 @@ export default function StockPage() {
   const isLoading = summaryStatus === 'loading' || batchesStatus === 'loading';
 
   const handleModalSuccess = () => {
-    setActiveModal(null);
+    setModalOpen(false);
     refresh();
   };
 
@@ -324,30 +322,17 @@ export default function StockPage() {
           </button>
         </div>
 
-        {/* ── Action buttons — both roles can use both ── */}
-        <div className="stock-actions-row">
-          <button
-            className="stock-action-btn entry"
-            onClick={() => setActiveModal('entry')}
-          >
-            <span className="sab-icon">📥</span>
-            <div className="sab-text">
-              <span className="sab-title">Registrar ingreso</span>
-              <span className="sab-sub">Agregar stock / nuevo lote</span>
-            </div>
-          </button>
-
-          <button
-            className="stock-action-btn sale"
-            onClick={() => setActiveModal('sale')}
-          >
-            <span className="sab-icon">🛒</span>
-            <div className="sab-text">
-              <span className="sab-title">Registrar venta</span>
-              <span className="sab-sub">Descontar del inventario</span>
-            </div>
-          </button>
-        </div>
+        {/* ── Action button — solo ingreso ── */}
+        <button
+          className="stock-action-btn entry"
+          onClick={() => setModalOpen(true)}
+        >
+          <span className="sab-icon">📥</span>
+          <div className="sab-text">
+            <span className="sab-title">Registrar ingreso</span>
+            <span className="sab-sub">Agregar stock / nuevo lote</span>
+          </div>
+        </button>
 
         {/* ── Stats strip ── */}
         <div className="stock-stats">
@@ -433,7 +418,7 @@ export default function StockPage() {
                 {!search && (
                   <button
                     className="stock-action-btn-inline"
-                    onClick={() => setActiveModal('entry')}
+                    onClick={() => setModalOpen(true)}
                   >
                     + Registrar primer ingreso
                   </button>
@@ -479,27 +464,14 @@ export default function StockPage() {
 
       {/* ── Modal: Stock Entry ── */}
       <Modal
-        isOpen={activeModal === 'entry'}
-        onClose={() => setActiveModal(null)}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
         title="Registrar ingreso de mercadería"
         width="560px"
       >
         <StockEntryForm
           onSuccess={handleModalSuccess}
-          onCancel={() => setActiveModal(null)}
-        />
-      </Modal>
-
-      {/* ── Modal: Sale ── */}
-      <Modal
-        isOpen={activeModal === 'sale'}
-        onClose={() => setActiveModal(null)}
-        title="Registrar venta manual"
-        width="480px"
-      >
-        <StockSaleForm
-          onSuccess={handleModalSuccess}
-          onCancel={() => setActiveModal(null)}
+          onCancel={() => setModalOpen(false)}
         />
       </Modal>
 
@@ -508,12 +480,13 @@ export default function StockPage() {
         .stock-content {
           max-width: 960px; margin: 0 auto;
           padding: var(--space-lg) var(--space-md);
+          display: flex; flex-direction: column; gap: var(--space-md);
         }
 
         /* Header */
         .stock-header {
           display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 12px; margin-bottom: var(--space-md); flex-wrap: wrap;
+          gap: 12px; flex-wrap: wrap;
         }
         .stock-title { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--espresso); margin-bottom: 4px; }
         .stock-sub {
@@ -537,17 +510,14 @@ export default function StockPage() {
         .stock-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 
-        /* ── Action buttons row ── */
-        .stock-actions-row {
-          display: grid; grid-template-columns: 1fr 1fr;
-          gap: 10px; margin-bottom: var(--space-lg);
-        }
+        /* ── Action button ── */
         .stock-action-btn {
           display: flex; align-items: center; gap: 12px;
-          padding: 14px 16px; border: 2px solid transparent;
+          padding: 14px 18px; border: 2px solid transparent;
           border-radius: var(--radius-lg); cursor: pointer;
           font-family: var(--font-body); text-align: left;
           transition: all var(--transition-fast);
+          width: 100%; max-width: 380px;
         }
         .stock-action-btn.entry {
           background: var(--espresso); color: var(--cream);
@@ -556,14 +526,6 @@ export default function StockPage() {
         .stock-action-btn.entry:hover {
           background: var(--espresso-mid); transform: translateY(-2px);
           box-shadow: var(--shadow-lg);
-        }
-        .stock-action-btn.sale {
-          background: #2E7D32; color: white;
-          box-shadow: 0 4px 16px rgba(46,125,50,0.22);
-        }
-        .stock-action-btn.sale:hover {
-          filter: brightness(1.08); transform: translateY(-2px);
-          box-shadow: 0 6px 24px rgba(46,125,50,0.3);
         }
         .sab-icon  { font-size: 1.5rem; flex-shrink: 0; }
         .sab-text  { display: flex; flex-direction: column; gap: 1px; }
@@ -574,7 +536,7 @@ export default function StockPage() {
         .stock-stats {
           display: flex; align-items: center;
           background: white; border: 1px solid var(--cream-dark); border-radius: var(--radius-lg);
-          padding: 14px 20px; margin-bottom: var(--space-lg);
+          padding: 14px 20px;
           box-shadow: var(--shadow-sm);
         }
         .stat-item { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; }
@@ -585,7 +547,6 @@ export default function StockPage() {
         /* Controls */
         .stock-controls {
           display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-          margin-bottom: var(--space-lg);
         }
         .stock-tabs { display: flex; background: var(--cream-dark); border-radius: var(--radius-md); padding: 3px; }
         .stock-tab {
@@ -646,10 +607,10 @@ export default function StockPage() {
         }
         .stock-action-btn-inline:hover { background: var(--espresso-mid); transform: translateY(-1px); }
 
-        .stock-count { text-align: right; font-size: 0.76rem; color: var(--warm-gray-light); margin-top: 10px; }
+        .stock-count { text-align: right; font-size: 0.76rem; color: var(--warm-gray-light); margin-top: 4px; }
 
         @media (max-width: 500px) {
-          .stock-actions-row { grid-template-columns: 1fr; }
+          .stock-action-btn { max-width: 100%; }
           .stock-summary-grid { grid-template-columns: 1fr 1fr; }
           .stock-controls { flex-direction: column; align-items: stretch; }
           .stock-tabs { align-self: flex-start; }

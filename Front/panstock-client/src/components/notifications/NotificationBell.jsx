@@ -107,7 +107,7 @@ export default function NotificationBell({ onRequestPermission }) {
         title={tooltip}
         aria-label="Configuración de notificaciones"
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+        <svg width="23" height="23" viewBox="0 0 24 24" fill="none"
           stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
           aria-hidden="true" style={{ display:'block' }}>
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -143,14 +143,14 @@ export default function NotificationBell({ onRequestPermission }) {
       <style>{`
         .bell-btn {
           position:relative; display:flex; align-items:center; justify-content:center;
-          width:34px; height:34px; background:none;
+          width:44px; height:44px; background:none;
           border:1.5px solid var(--cream-dark,#EDE6DB); border-radius:10px;
           cursor:pointer; flex-shrink:0; padding:0;
           transition:background 0.15s, border-color 0.15s;
         }
         .bell-btn:hover { background:var(--cream-dark,#EDE6DB); border-color:var(--amber,#C8893A); }
         .bell-dot {
-          position:absolute; bottom:5px; right:5px; width:7px; height:7px;
+          position:absolute; bottom:5px; right:5px; width:9px; height:9px;
           border-radius:50%; border:1.5px solid white; transition:background 0.3s; pointer-events:none;
         }
         .bell-badge {
