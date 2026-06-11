@@ -7,6 +7,7 @@ import {
 } from '../../features/stock/stockSlice';
 import { selectToken, selectUser } from '../../features/auth/authSlice';
 import { selectProducts, fetchProducts } from '../../features/catalog/productsSlice';
+import { selectPromotions } from '../../features/promotions/promotionsSlice';
 import { Alert } from '../ui/FormField';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -21,6 +22,13 @@ const buildEmpty = (initialProductId) => ({
   quantity:  '',
   notes:     '',
 });
+
+const formatARS = (v) =>
+  v != null
+    ? new Intl.NumberFormat('es-AR', {
+        style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
+      }).format(v)
+    : null;
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
 function Field({ label, error, hint, children, required }) {
@@ -40,7 +48,7 @@ function Field({ label, error, hint, children, required }) {
 }
 
 // ─── Success Screen ────────────────────────────────────────────────────────────
-function SuccessView({ result, onNew, onClose }) {
+function SuccessView({ result, appliedPromo, onNew, onClose }) {
   const productName = result?.productName || 'Producto';
   const totalQty    = result?.totalQuantity ?? '?';
   const movements   = result?.movements ?? [];
@@ -56,6 +64,18 @@ function SuccessView({ result, onNew, onClose }) {
         {lots > 1 && <>, descontando de <strong>{lots} lotes</strong> (FEFO)</>}.
       </p>
 
+      {/* Indicar si se aplicó precio promocional */}
+      {appliedPromo && (
+        <div className="sf-promo-applied">
+          🏷️ Precio de promoción aplicado:{' '}
+          <strong style={{ color: '#C0392B' }}>
+            {appliedPromo.discountType === 'PERCENTAGE'
+              ? `−${appliedPromo.discountPercentage}%`
+              : formatARS(appliedPromo.promotionalPrice)}
+          </strong>
+        </div>
+      )}
+
       {movements.length > 0 && (
         <div className="sf-success-movements">
           {movements.map((m) => (
@@ -68,12 +88,8 @@ function SuccessView({ result, onNew, onClose }) {
       )}
 
       <div className="sf-success-actions">
-        <button className="sf-btn-secondary" onClick={onClose}>
-          Volver
-        </button>
-        <button className="sf-btn-primary" onClick={onNew}>
-          + Otra venta
-        </button>
+        <button className="sf-btn-secondary" onClick={onClose}>Volver</button>
+        <button className="sf-btn-primary" onClick={onNew}>+ Otra venta</button>
       </div>
 
       <style>{`
@@ -90,6 +106,11 @@ function SuccessView({ result, onNew, onClose }) {
         .sf-success-desc {
           font-size: 0.9rem; color: var(--warm-gray);
           line-height: 1.6; max-width: 340px;
+        }
+        .sf-promo-applied {
+          padding: 8px 16px; border-radius: var(--radius-md);
+          background: rgba(214,137,16,0.08); border: 1px solid rgba(214,137,16,0.3);
+          font-size: 0.84rem; color: var(--warm-gray);
         }
         .sf-success-movements {
           display: flex; flex-wrap: wrap; gap: 7px;
@@ -130,21 +151,23 @@ function SuccessView({ result, onNew, onClose }) {
 /**
  * StockSaleForm
  *
- * Props:
- *   onSuccess          — callback cuando la venta se registra con éxito
- *   onCancel           — callback para cerrar sin guardar
- *   initialProductId   — (opcional) ID del producto a pre-seleccionar en el dropdown
+ * Si hay una promo activa para el producto seleccionado:
+ *   - Muestra un banner con el precio promocional
+ *   - Incluye el precio de promo en las notas del movimiento
+ *   - El backend descuenta stock normalmente (FEFO), el precio queda en notas
  */
 export default function StockSaleForm({ onSuccess, onCancel, initialProductId }) {
-  const dispatch            = useDispatch();
-  const token               = useSelector(selectToken);
-  const user                = useSelector(selectUser);
-  const products            = useSelector(selectProducts);
+  const dispatch             = useDispatch();
+  const token                = useSelector(selectToken);
+  const user                 = useSelector(selectUser);
+  const products             = useSelector(selectProducts);
+  const allPromotions        = useSelector(selectPromotions);
   const { status, error, lastResult } = useSelector(selectSaleAction);
 
-  const [form, setForm]         = useState(() => buildEmpty(initialProductId));
-  const [fieldErrors, setFE]    = useState({});
+  const [form, setForm]           = useState(() => buildEmpty(initialProductId));
+  const [fieldErrors, setFE]      = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
+  const [appliedPromo, setAppliedPromo] = useState(null);
 
   // Load active products if needed
   useEffect(() => {
@@ -154,15 +177,14 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     dispatch(clearSaleState());
   }, []); // eslint-disable-line
 
-  // Si initialProductId cambia desde fuera (ej: abrir modal para otro producto)
   useEffect(() => {
     setForm(buildEmpty(initialProductId));
     setFE({});
     setShowSuccess(false);
+    setAppliedPromo(null);
     dispatch(clearSaleState());
   }, [initialProductId]); // eslint-disable-line
 
-  // Show success screen on completion
   useEffect(() => {
     if (status === 'succeeded') {
       setShowSuccess(true);
@@ -184,6 +206,54 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     ? (UNIT_LABELS[selectedProduct.unitType] || selectedProduct.unitType)
     : '';
 
+  // ── Buscar promo activa para el producto seleccionado ─────────────────────
+  const activePromoForProduct = useMemo(() => {
+    if (!form.productId || !allPromotions?.length) return null;
+    const pid = Number(form.productId);
+    return allPromotions.find(
+      (p) => p.status === 'ACTIVE' && p.productId === pid
+    ) || null;
+  }, [form.productId, allPromotions]);
+
+  // ── Calcular precio efectivo de venta ─────────────────────────────────────
+  const effectivePrice = useMemo(() => {
+    if (!selectedProduct) return null;
+
+    if (activePromoForProduct) {
+      if (activePromoForProduct.discountType === 'FIXED_PRICE' && activePromoForProduct.promotionalPrice) {
+        return {
+          price: Number(activePromoForProduct.promotionalPrice),
+          isPromo: true,
+          promoInfo: activePromoForProduct,
+          originalPrice: selectedProduct.salePrice,
+        };
+      }
+      if (activePromoForProduct.discountType === 'PERCENTAGE' && activePromoForProduct.discountPercentage) {
+        const orig = selectedProduct.salePrice ?? activePromoForProduct.originalPrice;
+        if (orig) {
+          const discounted = Number(orig) * (1 - Number(activePromoForProduct.discountPercentage) / 100);
+          return {
+            price: discounted,
+            isPromo: true,
+            promoInfo: activePromoForProduct,
+            originalPrice: orig,
+          };
+        }
+      }
+    }
+
+    // Sin promo o no se pudo calcular
+    if (selectedProduct.salePrice != null && selectedProduct.salePrice !== 0) {
+      return {
+        price: Number(selectedProduct.salePrice),
+        isPromo: false,
+        promoInfo: null,
+        originalPrice: null,
+      };
+    }
+    return null;
+  }, [selectedProduct, activePromoForProduct]);
+
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
@@ -199,16 +269,43 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     if (fieldErrors[field]) setFE((p) => ({ ...p, [field]: undefined }));
   };
 
+  // Construir nota con info de precio
+  const buildNotes = () => {
+    const parts = [];
+    if (form.notes.trim()) parts.push(form.notes.trim());
+
+    if (effectivePrice?.isPromo && effectivePrice.promoInfo) {
+      const promo = effectivePrice.promoInfo;
+      const priceStr = formatARS(effectivePrice.price) || `$${effectivePrice.price}`;
+      const origStr  = effectivePrice.originalPrice ? formatARS(effectivePrice.originalPrice) : null;
+      const promoDesc = promo.discountType === 'PERCENTAGE'
+        ? `Promo: -${promo.discountPercentage}% → ${priceStr}${origStr ? ` (orig. ${origStr})` : ''}`
+        : `Promo precio fijo: ${priceStr}${origStr ? ` (orig. ${origStr})` : ''}`;
+      parts.push(promoDesc);
+    } else if (effectivePrice && !effectivePrice.isPromo) {
+      parts.push(`Precio: ${formatARS(effectivePrice.price)}`);
+    }
+
+    return parts.length > 0 ? parts.join(' | ') : null;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
 
+    // Guardar la promo que se aplicó para mostrarla en el success screen
+    if (effectivePrice?.isPromo) {
+      setAppliedPromo(effectivePrice.promoInfo);
+    } else {
+      setAppliedPromo(null);
+    }
+
     const payload = {
       productId: Number(form.productId),
       userId:    user?.id ?? null,
       quantity:  Number(form.quantity),
-      notes:     form.notes.trim() || null,
+      notes:     buildNotes(),
     };
 
     dispatch(registerSale({ token, data: payload }));
@@ -218,6 +315,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     setForm(buildEmpty(initialProductId));
     setFE({});
     setShowSuccess(false);
+    setAppliedPromo(null);
     dispatch(clearSaleState());
   };
 
@@ -230,7 +328,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
 
   // ── Success screen ─────────────────────────────────────────────────────────
   if (showSuccess) {
-    return <SuccessView result={lastResult} onNew={handleNew} onClose={handleClose} />;
+    return <SuccessView result={lastResult} appliedPromo={appliedPromo} onNew={handleNew} onClose={handleClose} />;
   }
 
   return (
@@ -264,7 +362,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         </select>
       </Field>
 
-      {/* Product hint */}
+      {/* Product hint chips */}
       {selectedProduct && (
         <div className="sale-product-hint">
           <span className="sale-product-chip origin">
@@ -275,12 +373,40 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
               Unidad: {unitLabel}
             </span>
           )}
-          {selectedProduct.salePrice != null && selectedProduct.salePrice !== 0 && (
-            <span className="sale-product-chip price">
-              💲 {new Intl.NumberFormat('es-AR', {
-                style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
-              }).format(selectedProduct.salePrice)} / {unitLabel}
-            </span>
+        </div>
+      )}
+
+      {/* ── Banner de precio (promo activa o precio regular) ── */}
+      {effectivePrice && (
+        <div className={`sale-price-banner ${effectivePrice.isPromo ? 'promo' : 'regular'}`}>
+          {effectivePrice.isPromo ? (
+            <>
+              <div className="spb-header">
+                <span className="spb-promo-icon">🏷️</span>
+                <span className="spb-promo-label">¡Promoción activa!</span>
+                <span className="spb-promo-title">{effectivePrice.promoInfo.title}</span>
+              </div>
+              <div className="spb-prices">
+                {effectivePrice.originalPrice && (
+                  <span className="spb-original">{formatARS(effectivePrice.originalPrice)}</span>
+                )}
+                <span className="spb-arrow">→</span>
+                <span className="spb-promo-price">{formatARS(effectivePrice.price)}</span>
+                {effectivePrice.promoInfo.discountType === 'PERCENTAGE' && (
+                  <span className="spb-discount-badge">
+                    −{effectivePrice.promoInfo.discountPercentage}%
+                  </span>
+                )}
+              </div>
+              <p className="spb-note">
+                Este precio quedará registrado en las notas del movimiento.
+              </p>
+            </>
+          ) : (
+            <div className="spb-regular">
+              <span className="spb-regular-label">💲 Precio de venta:</span>
+              <span className="spb-regular-price">{formatARS(effectivePrice.price)} / {unitLabel}</span>
+            </div>
           )}
         </div>
       )}
@@ -305,8 +431,18 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         />
       </Field>
 
+      {/* ── Subtotal estimado ── */}
+      {effectivePrice && form.quantity && !isNaN(Number(form.quantity)) && Number(form.quantity) > 0 && (
+        <div className="sale-subtotal">
+          <span className="sale-subtotal-label">Subtotal estimado:</span>
+          <span className="sale-subtotal-value" style={{ color: effectivePrice.isPromo ? '#C0392B' : 'var(--espresso)' }}>
+            {formatARS(effectivePrice.price * Number(form.quantity))}
+          </span>
+        </div>
+      )}
+
       {/* ── Notes ── */}
-      <Field label="Observaciones">
+      <Field label="Observaciones adicionales">
         <textarea
           className="sale-textarea"
           placeholder="Ej: Venta mostrador turno tarde..."
@@ -399,7 +535,74 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         }
         .sale-product-chip.origin { background: rgba(200,137,58,0.10); color: var(--amber-dark); }
         .sale-product-chip.unit   { background: var(--cream-dark); color: var(--warm-gray); }
-        .sale-product-chip.price  { background: rgba(46,125,50,0.10); color: #2E7D32; }
+
+        /* ── Banner de precio ── */
+        .sale-price-banner {
+          border-radius: var(--radius-md); padding: 12px 14px;
+          display: flex; flex-direction: column; gap: 8px;
+          animation: fadeIn 0.25s ease;
+        }
+        .sale-price-banner.promo {
+          background: rgba(192,57,43,0.05);
+          border: 1.5px solid rgba(192,57,43,0.3);
+        }
+        .sale-price-banner.regular {
+          background: rgba(46,125,50,0.05);
+          border: 1px solid rgba(46,125,50,0.2);
+        }
+
+        .spb-header {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .spb-promo-icon  { font-size: 1rem; flex-shrink: 0; }
+        .spb-promo-label {
+          font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+          letter-spacing: 0.06em; color: #C0392B;
+        }
+        .spb-promo-title {
+          font-size: 0.82rem; font-weight: 600; color: var(--espresso);
+          background: rgba(192,57,43,0.08); padding: 2px 9px;
+          border-radius: 12px;
+        }
+
+        .spb-prices {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .spb-original {
+          text-decoration: line-through; font-size: 0.86rem;
+          color: var(--warm-gray); font-weight: 500;
+        }
+        .spb-arrow { font-size: 0.82rem; color: var(--warm-gray); }
+        .spb-promo-price {
+          font-family: var(--font-display); font-size: 1.2rem;
+          font-weight: 800; color: #C0392B;
+        }
+        .spb-discount-badge {
+          padding: 3px 10px; border-radius: 20px;
+          background: #C0392B; color: white;
+          font-size: 0.74rem; font-weight: 800;
+        }
+        .spb-note {
+          font-size: 0.74rem; color: var(--warm-gray); margin: 0;
+        }
+
+        .spb-regular {
+          display: flex; align-items: center; gap: 10px;
+        }
+        .spb-regular-label { font-size: 0.82rem; color: var(--warm-gray); font-weight: 500; }
+        .spb-regular-price {
+          font-weight: 700; font-size: 1rem; color: #2E7D32;
+        }
+
+        /* Subtotal */
+        .sale-subtotal {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 10px 14px; border-radius: var(--radius-md);
+          background: var(--cream); border: 1px solid var(--cream-dark);
+          animation: fadeIn 0.2s ease;
+        }
+        .sale-subtotal-label { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
+        .sale-subtotal-value { font-family: var(--font-display); font-size: 1.1rem; font-weight: 800; }
 
         /* Actions */
         .sale-actions {
