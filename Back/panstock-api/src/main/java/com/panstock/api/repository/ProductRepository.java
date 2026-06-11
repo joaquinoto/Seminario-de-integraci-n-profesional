@@ -19,4 +19,8 @@ public interface ProductRepository {
     List<Product> findActiveByOrigin(ProductOrigin origin);
 
     List<Product> findActiveByCategoryId(Long categoryId);
+
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }
