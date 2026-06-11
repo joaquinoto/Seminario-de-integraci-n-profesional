@@ -6,12 +6,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.panstock.api.enums.Role;
@@ -22,6 +24,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Autowired
@@ -37,6 +40,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(req -> req
+
+                    // ── Preflight OPTIONS: siempre libre — CRÍTICO para CORS ──────────
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                     // ── Auth: public ─────────────────────────────────────────────────
                     .requestMatchers("/auth/**").permitAll()
@@ -107,13 +113,48 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // ─── CORS Configuration ───────────────────────────────────────────────────
+    //
+    // FIX: reemplaza allowedOrigins("*") + allowCredentials(false) + addAllowedHeader("*")
+    // por allowedOriginPatterns con dominio explícito + allowCredentials(true)
+    // + headers declarados explícitamente.
+    //
+    // Causa raíz del 403 en producción:
+    //   - allowedOrigins("*") es incompatible con el envío del header Authorization
+    //   - allowCredentials(false) rechazaba explícitamente el flujo de autenticación
+    //   - addAllowedHeader("*") no garantizaba que "Authorization" fuera aceptado
+    //     en el preflight OPTIONS, por lo que el browser bloqueaba el GET real.
+
     @Bean
-    public UrlBasedCorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfig = new CorsConfiguration();
-        corsConfig.setAllowedOrigins(List.of("*"));
-        corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        corsConfig.setAllowCredentials(false);
-        corsConfig.addAllowedHeader("*");
+
+        // allowedOriginPatterns: compatible con allowCredentials(true)
+        // Cubre producción Vercel + cualquier Preview URL generada por la rama
+        corsConfig.setAllowedOriginPatterns(List.of(
+            "https://*.vercel.app",  // Producción + Preview deployments de Vercel
+            "http://localhost:5173", // Dev local — Vite default port
+            "http://localhost:3000"  // Dev local — puerto alternativo
+        ));
+
+        corsConfig.setAllowedMethods(List.of(
+            "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+        ));
+
+        // Headers explícitos — el browser necesita ver "Authorization"
+        // en Access-Control-Allow-Headers para permitir el request real
+        corsConfig.setAllowedHeaders(List.of(
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "X-Requested-With"
+        ));
+
+        // true: habilita el flujo de credentials (JWT via Authorization header)
+        corsConfig.setAllowCredentials(true);
+
+        // Cache del preflight en el browser: 1 hora (evita OPTIONS repetidos)
+        corsConfig.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);
