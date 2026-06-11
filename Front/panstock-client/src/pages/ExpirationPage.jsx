@@ -10,9 +10,7 @@ import {
   clearExpirationState,
 } from '../features/stock/expirationSlice';
 import {
-  deleteProduct,
   clearProductActionState,
-  selectProductAction,
   selectProducts,
   fetchProducts,
 } from '../features/catalog/productsSlice';
@@ -20,8 +18,15 @@ import {
   autoWasteExpiredBatch,
   selectAutoWastePending,
 } from '../features/waste/wasteSlice';
+import {
+  clearSaleState,
+} from '../features/stock/stockSlice';
+import {
+  selectPromotions,
+} from '../features/promotions/promotionsSlice';
 import { selectToken, selectUser } from '../features/auth/authSlice';
-import { ConfirmDialog, TableSkeleton } from '../components/ui/CatalogUI';
+import { ConfirmDialog, TableSkeleton, Modal } from '../components/ui/CatalogUI';
+import StockSaleForm from '../components/stock/StockSaleForm';
 import AppTopbar from '../components/layout/AppTopbar';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -121,19 +126,34 @@ export default function ExpirationPage() {
   const counts          = useSelector(selectSemaphoreCounts);
   const status          = useSelector(selectSemaphoreStatus);
   const fetchErr        = useSelector(selectSemaphoreError);
-  const { status: actStatus } = useSelector(selectProductAction);
   const allProducts     = useSelector(selectProducts);
   const autoWastePending = useSelector(selectAutoWastePending);
 
+  // Todas las promociones del store (cargadas desde el topbar/dashboard)
+  const allPromotions   = useSelector(selectPromotions);
+
   const [activeFilter,   setActiveFilter]   = useState('ALL');
   const [search,         setSearch]         = useState('');
-  const [confirmData,    setConfirmData]    = useState(null);
   const [autoWasteToast, setAutoWasteToast] = useState('');
 
-  // Ref de los batchIds que ya están siendo procesados en este ciclo
-  // de auto-descarte (dentro del mismo useEffect call).
-  // Se resetea con cada nuevo fetch del semáforo.
+  // Modal de venta
+  const [saleModal,      setSaleModal]      = useState(null); // { productId, productName }
+
   const processingRef = useRef(new Set());
+
+  // ── Helpers de promociones ────────────────────────────────────────────────
+  // Devuelve la primera promo ACTIVE para un batchId dado, o null
+  const getActivePromoForBatch = (batchId) => {
+    if (!allPromotions?.length) return null;
+    return allPromotions.find(
+      (p) => p.status === 'ACTIVE' && p.batchId === batchId
+    ) || null;
+  };
+
+  // Devuelve true si hay sugerencia para el lote (usamos la lista de items
+  // ya disponible en el store de promotions vía suggestions, pero como puede
+  // no estar cargada, solo la usamos como pista visual)
+  // La navegación con ?tab=suggestions&batch=ID hace el trabajo real.
 
   // ── Fetch al montar ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -144,40 +164,21 @@ export default function ExpirationPage() {
   }, [token, dispatch]);
 
   // ── AUTO-DESCARTE ─────────────────────────────────────────────────────────
-  //
-  //   - Solo lotes con daysToExpire < 0  (es decir, contando desde AYER hacia atrás).
-  //   - daysToExpire === 0 (vence HOY) → NO se descarta automáticamente.
-  //   - status === 'EXPIRED' implica daysToExpire < 0 en el backend.
-  //
-  // Garantía de idempotencia:
-  //   - processingRef evita llamadas simultáneas para el mismo batchId
-  //     dentro del mismo ciclo (Set en memoria, no persiste).
-  //   - autoWastePending en Redux evita que un thunk en vuelo se duplique.
-  //   - Si el semáforo devuelve el lote con stock > 0 → tiene que descartarse,
-  //     sin importar si hubo intentos previos (no bloqueamos por historia).
-  //   - El backend valida: si el lote ya está DEPLETED devuelve 400 y el
-  //     thunk.rejected lo ignora silenciosamente.
-  //   - try/finally garantiza que processingRef siempre se limpie,
-  //     incluso si algún dispatch falla inesperadamente.
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (status !== 'succeeded') return;
 
-    // Lotes con status EXPIRED (daysToExpire < 0) con stock > 0
-    // que no estén ya en proceso en este ciclo ni en un thunk en vuelo
     const toProcess = items.filter(
       (item) =>
         item.status === 'EXPIRED' &&
         item.daysToExpire != null &&
-        item.daysToExpire < 0 &&                          // estrictamente vencidos (desde ayer)
+        item.daysToExpire < 0 &&
         Number(item.currentQuantity) > 0 &&
-        !processingRef.current.has(item.batchId) &&       // no en este ciclo
-        !autoWastePending.includes(item.batchId)          // no en vuelo
+        !processingRef.current.has(item.batchId) &&
+        !autoWastePending.includes(item.batchId)
     );
 
     if (toProcess.length === 0) return;
 
-    // Marcar como "en proceso" para este ciclo
     toProcess.forEach((item) => processingRef.current.add(item.batchId));
 
     const processAll = async () => {
@@ -192,8 +193,6 @@ export default function ExpirationPage() {
           );
         }
 
-        // Refrescar semáforo: los lotes descartados (DEPLETED, qty=0)
-        // ya no aparecerán porque getExpired() filtra solo AVAILABLE con qty > 0
         dispatch(clearExpirationState());
         dispatch(fetchSemaphore({ token }));
 
@@ -203,7 +202,6 @@ export default function ExpirationPage() {
         );
         setTimeout(() => setAutoWasteToast(''), 5000);
       } finally {
-        // Siempre limpiar el set de este ciclo, incluso si hubo errores
         processingRef.current.clear();
       }
     };
@@ -241,17 +239,27 @@ export default function ExpirationPage() {
     return Array.from(map.values());
   }, [filtered]);
 
-  const handleDeactivateConfirm = () => {
-    if (!confirmData) return;
-    dispatch(deleteProduct({ token, id: confirmData.productId })).then(() => {
-      dispatch(clearProductActionState());
-      setConfirmData(null);
-      dispatch(clearExpirationState());
-      dispatch(fetchSemaphore({ token }));
-    });
+  // ── Handlers de venta ────────────────────────────────────────────────────
+  const handleSaleSuccess = () => {
+    setSaleModal(null);
+    dispatch(clearSaleState());
+    // Refrescar semáforo para reflejar el stock actualizado
+    dispatch(clearExpirationState());
+    dispatch(fetchSemaphore({ token }));
   };
 
-  const deactivating     = actStatus === 'loading' && confirmData !== null;
+  // ── Handlers de promo ────────────────────────────────────────────────────
+  const handlePromoClick = (batch) => {
+    const activePromo = getActivePromoForBatch(batch.batchId);
+    if (activePromo) {
+      // Hay promo activa → ir a la tab "activas" destacando esa promo
+      navigate(`/promotions?tab=active&promoId=${activePromo.id}`);
+    } else {
+      // Sin promo activa → ir a sugerencias para ese lote (solo OWNER llega aquí)
+      navigate(`/promotions?tab=suggestions&batchId=${batch.batchId}`);
+    }
+  };
+
   const autoWasteRunning = autoWastePending.length > 0;
 
   const worstStatus = (batches) => {
@@ -335,13 +343,6 @@ export default function ExpirationPage() {
                 <button className="exp-search-clear" onClick={() => setSearch('')}>✕</button>
               )}
             </div>
-            {isOwner(user) && (
-              <p className="exp-owner-hint">
-                💡 <strong>Retirar de la venta</strong> desactiva el producto: deja de aparecer
-                en el catálogo y no puede usarse en nuevas operaciones de stock.
-                El historial se conserva.
-              </p>
-            )}
           </div>
         )}
 
@@ -397,54 +398,78 @@ export default function ExpirationPage() {
                       </div>
                     </div>
 
+                    {/* ── Acciones del grupo ── */}
                     <div className="exp-group-actions">
+                      {/* Registrar venta — visible para OWNER y EMPLOYEE */}
                       <button
-                        className="exp-action-btn secondary"
-                        onClick={() => navigate('/products')}
-                        title="Ver en catálogo de productos"
+                        className="exp-action-btn sale"
+                        onClick={() => setSaleModal({
+                          productId:   group.productId,
+                          productName: group.productName,
+                        })}
+                        title="Registrar venta de este producto"
                       >
-                        Ver producto
+                        🛒 Registrar venta
                       </button>
-
-                      {isOwner(user) && hasUrgent && productActive && (
-                        <button
-                          className="exp-action-btn danger"
-                          onClick={() => setConfirmData({
-                            productId:   group.productId,
-                            productName: group.productName,
-                          })}
-                          title="Retirar de la venta (desactivar producto)"
-                        >
-                          🚫 Retirar de la venta
-                        </button>
-                      )}
                     </div>
                   </div>
 
+                  {/* Lotes del grupo */}
                   <div className="exp-batches">
-                    {group.batches.map((batch) => (
-                      <div key={batch.batchId} className="exp-batch-row">
-                        <div className="exp-batch-left">
-                          <StatusPill status={batch.status} />
-                          <span className="exp-batch-date">
-                            📅 {batch.expirationDate
-                              ? new Date(batch.expirationDate + 'T00:00:00').toLocaleDateString('es-AR', {
-                                  day: '2-digit', month: 'short', year: 'numeric',
-                                })
-                              : '—'}
-                          </span>
-                          <DaysChip days={batch.daysToExpire} status={batch.status} />
+                    {group.batches.map((batch) => {
+                      const activePromo = getActivePromoForBatch(batch.batchId);
+                      const hasActivePromo = Boolean(activePromo);
+
+                      return (
+                        <div key={batch.batchId} className="exp-batch-row">
+                          <div className="exp-batch-left">
+                            <StatusPill status={batch.status} />
+                            <span className="exp-batch-date">
+                              📅 {batch.expirationDate
+                                ? new Date(batch.expirationDate + 'T00:00:00').toLocaleDateString('es-AR', {
+                                    day: '2-digit', month: 'short', year: 'numeric',
+                                  })
+                                : '—'}
+                            </span>
+                            <DaysChip days={batch.daysToExpire} status={batch.status} />
+                          </div>
+
+                          <div className="exp-batch-right-wrap">
+                            <div className="exp-batch-right">
+                              <span className="exp-batch-qty">
+                                {batch.currentQuantity != null
+                                  ? `${Number(batch.currentQuantity).toLocaleString('es-AR')} u.`
+                                  : '—'}
+                              </span>
+                              <span className="exp-batch-id">Lote #{batch.batchId}</span>
+                            </div>
+
+                            {/* Botón de promo por lote */}
+                            {hasActivePromo ? (
+                              /* Ver promo activa — OWNER y EMPLOYEE */
+                              <button
+                                className="exp-batch-promo-btn active-promo"
+                                onClick={() => handlePromoClick(batch)}
+                                title="Ver promoción activa para este lote"
+                              >
+                                🏷️ Ver promo
+                              </button>
+                            ) : (
+                              /* Activar promo — solo OWNER, lote urgente, producto activo */
+                              isOwner(user) && hasUrgent && productActive && (
+                                <button
+                                  className="exp-batch-promo-btn activate-promo"
+                                  onClick={() => handlePromoClick(batch)}
+                                  title="Crear promoción para este lote"
+                                >
+                                  🏷️ Activar promo
+                                </button>
+                              )
+                            )}
+                          </div>
                         </div>
-                        <div className="exp-batch-right">
-                          <span className="exp-batch-qty">
-                            {batch.currentQuantity != null
-                              ? `${Number(batch.currentQuantity).toLocaleString('es-AR')} u.`
-                              : '—'}
-                          </span>
-                          <span className="exp-batch-id">Lote #{batch.batchId}</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -460,20 +485,27 @@ export default function ExpirationPage() {
         )}
       </div>
 
-      <ConfirmDialog
-        isOpen={Boolean(confirmData)}
-        onClose={() => setConfirmData(null)}
-        onConfirm={handleDeactivateConfirm}
-        title="Retirar producto de la venta"
-        message={
-          confirmData
-            ? `¿Desactivar "${confirmData.productName}"? El producto dejará de aparecer en el catálogo y no podrá usarse en nuevas operaciones de stock. El historial se conserva.`
-            : ''
-        }
-        confirmLabel="Retirar de la venta"
-        danger
-        loading={deactivating}
-      />
+      {/* ── Modal: Registrar venta ── */}
+      <Modal
+        isOpen={Boolean(saleModal)}
+        onClose={() => {
+          dispatch(clearSaleState());
+          setSaleModal(null);
+        }}
+        title={saleModal ? `Registrar venta — ${saleModal.productName}` : 'Registrar venta'}
+        width="480px"
+      >
+        {saleModal && (
+          <StockSaleForm
+            initialProductId={saleModal.productId}
+            onSuccess={handleSaleSuccess}
+            onCancel={() => {
+              dispatch(clearSaleState());
+              setSaleModal(null);
+            }}
+          />
+        )}
+      </Modal>
 
       <style>{`
         .exp-page    { min-height: 100vh; background: var(--cream); }
@@ -538,11 +570,6 @@ export default function ExpirationPage() {
           background: none; border: none; cursor: pointer;
           color: var(--warm-gray); font-size: 0.75rem; padding: 4px;
         }
-        .exp-owner-hint {
-          font-size: 0.8rem; color: var(--warm-gray); padding: 10px 14px;
-          background: rgba(200,137,58,0.06); border: 1px solid rgba(200,137,58,0.2);
-          border-radius: var(--radius-md); line-height: 1.5; max-width: 600px;
-        }
 
         .exp-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center; }
         .exp-empty-icon  { font-size: 2.4rem; opacity: 0.5; }
@@ -577,16 +604,21 @@ export default function ExpirationPage() {
           color: #7f1d1d; background: rgba(127,29,29,0.1); white-space: nowrap;
         }
         .exp-group-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Botones de acción del grupo */
         .exp-action-btn {
           padding: 7px 14px; border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
           cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
         }
-        .exp-action-btn.secondary { background: white; border: 1.5px solid var(--cream-dark); color: var(--warm-gray); }
-        .exp-action-btn.secondary:hover { border-color: var(--espresso); color: var(--espresso); }
-        .exp-action-btn.danger { background: rgba(192,57,43,0.08); border: 1.5px solid rgba(192,57,43,0.3); color: #C0392B; }
-        .exp-action-btn.danger:hover { background: rgba(192,57,43,0.15); border-color: #C0392B; }
+        .exp-action-btn.sale {
+          background: rgba(46,125,50,0.09); border: 1.5px solid rgba(46,125,50,0.3); color: #2E7D32;
+        }
+        .exp-action-btn.sale:hover {
+          background: rgba(46,125,50,0.16); border-color: #2E7D32;
+        }
 
+        /* Lotes */
         .exp-batches { display: flex; flex-direction: column; }
         .exp-batch-row {
           display: flex; align-items: center; justify-content: space-between;
@@ -596,10 +628,35 @@ export default function ExpirationPage() {
         .exp-batch-row:last-child { border-bottom: none; }
         .exp-batch-row:hover { background: var(--cream); }
         .exp-batch-left  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .exp-batch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
-        .exp-batch-date  { font-size: 0.82rem; color: var(--warm-gray); }
+
+        /* Lado derecho del batch: cantidad + id + botón de promo */
+        .exp-batch-right-wrap {
+          display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .exp-batch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
         .exp-batch-qty   { font-weight: 700; font-size: 0.88rem; color: var(--espresso); }
         .exp-batch-id    { font-size: 0.72rem; color: var(--warm-gray-light); }
+
+        /* Botones de promo por lote */
+        .exp-batch-promo-btn {
+          padding: 5px 12px; border-radius: var(--radius-md);
+          font-family: var(--font-body); font-size: 0.76rem; font-weight: 700;
+          cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
+          display: inline-flex; align-items: center; gap: 4px;
+        }
+        .exp-batch-promo-btn.active-promo {
+          background: rgba(46,125,50,0.10); border: 1.5px solid rgba(46,125,50,0.35); color: #2E7D32;
+        }
+        .exp-batch-promo-btn.active-promo:hover {
+          background: rgba(46,125,50,0.18); border-color: #2E7D32;
+        }
+        .exp-batch-promo-btn.activate-promo {
+          background: rgba(214,137,16,0.10); border: 1.5px solid rgba(214,137,16,0.35); color: #A07800;
+        }
+        .exp-batch-promo-btn.activate-promo:hover {
+          background: rgba(214,137,16,0.18); border-color: #D68910;
+        }
 
         .exp-count { text-align: right; font-size: 0.78rem; color: var(--warm-gray-light); margin-top: 12px; }
 
@@ -609,6 +666,7 @@ export default function ExpirationPage() {
           .hide-sm          { display: none; }
           .exp-content      { padding: var(--space-lg) var(--space-md); }
           .exp-auto-progress { font-size: 0.8rem; }
+          .exp-batch-right-wrap { flex-direction: column; align-items: flex-end; gap: 6px; }
         }
       `}</style>
     </div>

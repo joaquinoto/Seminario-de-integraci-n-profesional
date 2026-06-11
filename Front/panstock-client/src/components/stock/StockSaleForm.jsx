@@ -16,11 +16,11 @@ const UNIT_LABELS = {
   TRAY: 'Band.', BAG: 'Bolsa', LITER: 'L', PACK: 'Pack',
 };
 
-const EMPTY = {
-  productId: '',
+const buildEmpty = (initialProductId) => ({
+  productId: initialProductId ? String(initialProductId) : '',
   quantity:  '',
   notes:     '',
-};
+});
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
 function Field({ label, error, hint, children, required }) {
@@ -69,7 +69,7 @@ function SuccessView({ result, onNew, onClose }) {
 
       <div className="sf-success-actions">
         <button className="sf-btn-secondary" onClick={onClose}>
-          Volver al stock
+          Volver
         </button>
         <button className="sf-btn-primary" onClick={onNew}>
           + Otra venta
@@ -127,14 +127,22 @@ function SuccessView({ result, onNew, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function StockSaleForm({ onSuccess, onCancel }) {
+/**
+ * StockSaleForm
+ *
+ * Props:
+ *   onSuccess          — callback cuando la venta se registra con éxito
+ *   onCancel           — callback para cerrar sin guardar
+ *   initialProductId   — (opcional) ID del producto a pre-seleccionar en el dropdown
+ */
+export default function StockSaleForm({ onSuccess, onCancel, initialProductId }) {
   const dispatch            = useDispatch();
   const token               = useSelector(selectToken);
   const user                = useSelector(selectUser);
   const products            = useSelector(selectProducts);
   const { status, error, lastResult } = useSelector(selectSaleAction);
 
-  const [form, setForm]         = useState(EMPTY);
+  const [form, setForm]         = useState(() => buildEmpty(initialProductId));
   const [fieldErrors, setFE]    = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -146,6 +154,14 @@ export default function StockSaleForm({ onSuccess, onCancel }) {
     dispatch(clearSaleState());
   }, []); // eslint-disable-line
 
+  // Si initialProductId cambia desde fuera (ej: abrir modal para otro producto)
+  useEffect(() => {
+    setForm(buildEmpty(initialProductId));
+    setFE({});
+    setShowSuccess(false);
+    dispatch(clearSaleState());
+  }, [initialProductId]); // eslint-disable-line
+
   // Show success screen on completion
   useEffect(() => {
     if (status === 'succeeded') {
@@ -153,7 +169,7 @@ export default function StockSaleForm({ onSuccess, onCancel }) {
     }
   }, [status]);
 
-  // Active products only (can't sell inactive)
+  // Active products only
   const activeProducts = useMemo(
     () => products.filter((p) => p.active),
     [products]
@@ -164,8 +180,6 @@ export default function StockSaleForm({ onSuccess, onCancel }) {
     [activeProducts, form.productId]
   );
 
-  // ── Stock info for the selected product ───────────────────────────────────
-  // We show the product's unit type so the user knows what "quantity" means
   const unitLabel = selectedProduct
     ? (UNIT_LABELS[selectedProduct.unitType] || selectedProduct.unitType)
     : '';
@@ -201,7 +215,7 @@ export default function StockSaleForm({ onSuccess, onCancel }) {
   };
 
   const handleNew = () => {
-    setForm(EMPTY);
+    setForm(buildEmpty(initialProductId));
     setFE({});
     setShowSuccess(false);
     dispatch(clearSaleState());
@@ -287,7 +301,7 @@ export default function StockSaleForm({ onSuccess, onCancel }) {
           value={form.quantity}
           onChange={handleChange('quantity')}
           disabled={isLoading}
-          autoFocus={!!form.productId}
+          autoFocus={Boolean(form.productId)}
         />
       </Field>
 
