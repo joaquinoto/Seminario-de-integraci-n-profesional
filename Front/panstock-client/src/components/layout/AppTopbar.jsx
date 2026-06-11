@@ -127,7 +127,7 @@ export default function AppTopbar() {
       <div className="topbar-inner">
         {/* Brand */}
         <NavLink to="/dashboard" className="topbar-brand">
-          <img src="/logo_panstock.png" alt="PanStock" width="30" height="30" />
+          <img src="/logo_panstock.png" alt="PanStock" width="63" height="63" />
           <span className="topbar-brand-name">PanStock</span>
         </NavLink>
 
@@ -165,7 +165,7 @@ export default function AppTopbar() {
               </span>
               <span className="topbar-username hide-mobile">
                 {user.firstName}&nbsp;
-                <span className="topbar-role">{user.role === 'OWNER' ? '👑' : '👤'}</span>
+              
               </span>
             </div>
           )}
@@ -191,19 +191,21 @@ export default function AppTopbar() {
           background: rgba(247,243,238,0.96);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid var(--cream-dark);
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         }
         .topbar-inner {
-          max-width: 1200px; margin: 0 auto;
+         
+          margin: 0 auto;
           padding: 0 var(--space-lg);
           display: flex; align-items: center; gap: var(--space-md);
-          height: 54px;
+          height: 84px;
         }
         .topbar-brand {
           display: flex; align-items: center; gap: 7px;
           text-decoration: none; flex-shrink: 0;
         }
         .topbar-brand-name {
-          font-family: var(--font-display); font-size: 1.05rem;
+          font-family: var(--font-display); font-size: 1.85rem;
           font-weight: 700; color: var(--espresso); letter-spacing: -0.01em;
         }
         .topbar-nav {
@@ -214,13 +216,13 @@ export default function AppTopbar() {
         .topbar-link {
           position: relative; display: flex; align-items: center; gap: 5px;
           padding: 6px 9px; border-radius: var(--radius-md);
-          text-decoration: none; font-size: 0.83rem; font-weight: 500;
-          color: var(--warm-gray); white-space: nowrap; flex-shrink: 0;
+          text-decoration: none; font-size: 1.2rem; font-weight: 500;
+          color: var(--esspresso-mid); white-space: nowrap; flex-shrink: 0;
           transition: background var(--transition-fast), color var(--transition-fast);
         }
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
         .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
-        .topbar-link-icon  { font-size: 0.92rem; line-height: 1; }
+        .topbar-link-icon  { font-size: 1.3rem; line-height: 1; }
         .topbar-link-label { line-height: 1; }
         .topbar-badge {
           display: inline-flex; align-items: center; justify-content: center;
@@ -239,13 +241,12 @@ export default function AppTopbar() {
           font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
           flex-shrink: 0; cursor: default;
         }
-        .topbar-username { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
-        .topbar-role { font-size: 0.85rem; }
+        .topbar-username { font-size: 1.2rem; color: var(--espresso-mid); font-weight: 500; }
         .topbar-logout {
           display: flex; align-items: center; gap: 5px;
-          padding: 6px 11px; background: none;
+          padding: 6px 11px; background: none; font-weight: 500;
           border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
-          font-family: var(--font-body); font-size: 0.8rem; color: var(--warm-gray);
+          font-family: var(--font-display); font-size: 1.15rem; color: var(--espresso-soft);
           cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
