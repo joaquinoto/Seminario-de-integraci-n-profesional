@@ -17,7 +17,7 @@ import {
 import {
   fetchPromotions,
   fetchPromotionSuggestions,
-  selectActivePromotionsCount,
+  selectVisiblePromotions,
   selectSuggestionsCount,
   selectSuggestionsStatus,
   clearPromotionsState,
@@ -38,32 +38,35 @@ const MAIN_MODULES = [
 
 const CATALOG_MODULES = [
   { icon: '🥐', title: 'Productos',   desc: 'Catálogo de franquicia y externos',     to: '/products'   },
-  { icon: '🗂',  title: 'Categorías',  desc: 'Grupos y clasificaciones',               to: '/categories' },
-  { icon: '🚚', title: 'Proveedores', desc: 'Franquicia, mayoristas y externos',      to: '/suppliers'  },
+  { icon: '🗂',  title: 'Categorías',  desc: 'Grupos y clasificaciones',              to: '/categories' },
+  { icon: '🚚', title: 'Proveedores', desc: 'Franquicia, mayoristas y externos',     to: '/suppliers'  },
 ];
 
 const OWNER_MODULES = [
-  { icon: '🛒', title: 'Reposición',  desc: 'Productos con stock por debajo del mínimo', to: '/restock' },
+  { icon: '🛒', title: 'Reposición', desc: 'Productos con stock por debajo del mínimo', to: '/restock' },
 ];
 
 const COMING_MODULES = [
-  { icon: '📊', title: 'Reportes',    desc: 'Mermas y pérdidas económicas' },
+  { icon: '📊', title: 'Reportes', desc: 'Mermas y pérdidas económicas' },
 ];
 
 export default function DashboardPage() {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
-  const user     = useSelector(selectUser);
-  const token    = useSelector(selectToken);
-  const counts   = useSelector(selectSemaphoreCounts);
+  const dispatch  = useDispatch();
+  const navigate  = useNavigate();
+  const user      = useSelector(selectUser);
+  const token     = useSelector(selectToken);
+  const counts    = useSelector(selectSemaphoreCounts);
   const semStatus = useSelector(selectSemaphoreStatus);
 
   const restockCount  = useSelector(selectRestockCount);
   const restockStatus = useSelector(selectRestockStatus);
 
-  const activePromoCount       = useSelector(selectActivePromotionsCount);
-  const promotionSuggestCount  = useSelector(selectSuggestionsCount);
-  const promotionSuggestStatus = useSelector(selectSuggestionsStatus);
+  // Usamos selectVisiblePromotions (filtra inactivos y lotes vencidos)
+  const visiblePromotions       = useSelector(selectVisiblePromotions);
+  const promotionSuggestCount   = useSelector(selectSuggestionsCount);
+  const promotionSuggestStatus  = useSelector(selectSuggestionsStatus);
+
+  const activePromoCount = visiblePromotions.filter((p) => p.status === 'ACTIVE').length;
 
   const isOwner = user?.role === 'OWNER';
   const role    = roleLabels[user?.role] || roleLabels.EMPLOYEE;
@@ -71,15 +74,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token) return;
 
-    // Expiration semaphore
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
 
-    // Promotions — cargar para ambos roles (activas visibles para todos)
     dispatch(clearPromotionsState());
     dispatch(fetchPromotions({ token }));
 
-    // OWNER extras
     if (isOwner) {
       if (restockStatus === 'idle') {
         dispatch(clearRestockState());
@@ -92,12 +92,11 @@ export default function DashboardPage() {
   }, [token, dispatch, isOwner]);
 
   const urgentCount = counts.expired + counts.red + counts.yellow;
-  const semColor = counts.expired > 0 ? '#C0392B'
-                 : counts.red     > 0 ? '#E74C3C'
-                 : counts.yellow  > 0 ? '#E67E22'
-                 : '#27AE60';
+  const semColor    = counts.expired > 0 ? '#C0392B'
+                    : counts.red     > 0 ? '#E74C3C'
+                    : counts.yellow  > 0 ? '#E67E22'
+                    : '#27AE60';
 
-  // Color de la card de promociones
   const promoColor = isOwner
     ? (promotionSuggestCount > 0 ? '#D68910' : activePromoCount > 0 ? '#2E7D32' : '#27AE60')
     : (activePromoCount > 0 ? '#2E7D32' : '#27AE60');
@@ -132,7 +131,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Semáforo de vencimientos ── */}
+        {/* ── Semáforo ── */}
         <button
           className="semaphore-card"
           onClick={() => navigate('/expiration')}
@@ -170,7 +169,7 @@ export default function DashboardPage() {
           <span className="sem-arrow">→</span>
         </button>
 
-        {/* ── Card de Promociones — visible para OWNER y EMPLOYEE ── */}
+        {/* ── Promociones ── */}
         <button
           className="promo-dash-card"
           onClick={() => navigate('/promotions')}
@@ -184,8 +183,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Badge de sugerencias (OWNER) o activas (EMPLOYEE) */}
-          {(isOwner && promotionSuggestCount > 0) && (
+          {isOwner && promotionSuggestCount > 0 && (
             <div className="promo-dash-badge" style={{ background: promoColor + '18', color: promoColor }}>
               <span className="promo-dash-badge-count">{promotionSuggestCount}</span>
               <span className="promo-dash-badge-label">sugerencias</span>
@@ -201,7 +199,7 @@ export default function DashboardPage() {
           <span className="promo-dash-arrow">→</span>
         </button>
 
-        {/* ── Restock card — OWNER only ── */}
+        {/* ── Reposición (OWNER) ── */}
         {isOwner && (
           <button
             className="restock-card"
@@ -246,13 +244,11 @@ export default function DashboardPage() {
                   <p className="module-title">{m.title}</p>
                   <p className="module-desc">{m.desc}</p>
                 </div>
-                {/* Badge de sugerencias en la card de Promociones para OWNER */}
                 {m.to === '/promotions' && isOwner && promotionSuggestCount > 0 && (
                   <span className="module-count-badge" style={{ background: '#D68910' }}>
                     {promotionSuggestCount}
                   </span>
                 )}
-                {/* Badge de activas en la card de Promociones para EMPLOYEE */}
                 {m.to === '/promotions' && !isOwner && activePromoCount > 0 && (
                   <span className="module-count-badge" style={{ background: '#2E7D32' }}>
                     {activePromoCount}
@@ -348,37 +344,44 @@ export default function DashboardPage() {
       </main>
 
       <style>{`
-        .dash-page { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
-        .dash-main {
-          max-width: 760px; margin: 0 auto;
-          padding: var(--space-xl) var(--space-lg);
-          display: flex; flex-direction: column; gap: var(--space-xl);
+        .dash-page  { min-height: 100vh; background: var(--cream); animation: fadeIn 0.4s ease; }
+        .dash-main  {
+          max-width: 780px; margin: 0 auto;
+          padding: var(--space-lg) var(--space-md);
+          display: flex; flex-direction: column; gap: var(--space-lg);
         }
 
-        /* Welcome */
+        /* ── Welcome ── */
         .welcome-card {
-          display: flex; align-items: center; gap: var(--space-lg);
-          padding: var(--space-xl); background: var(--espresso);
+          display: flex; align-items: center; gap: var(--space-md);
+          padding: var(--space-lg) var(--space-xl);
+          background: var(--espresso);
           border-radius: var(--radius-xl); color: var(--cream);
           animation: slideUp 0.4s ease 0.1s both;
         }
         .welcome-avatar {
-          width: 54px; height: 54px; border-radius: 50%; background: var(--amber);
+          width: 50px; height: 50px; border-radius: 50%;
+          background: var(--amber);
           display: flex; align-items: center; justify-content: center;
-          font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
+          font-family: var(--font-display); font-size: 1.4rem; font-weight: 700;
           color: white; flex-shrink: 0;
         }
-        .welcome-title { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; margin-bottom: 4px; }
-        .welcome-sub   { font-size: 0.84rem; opacity: 0.7; margin-bottom: 10px; }
+        .welcome-title {
+          font-family: var(--font-display);
+          font-size: clamp(1.1rem, 4vw, 1.4rem);
+          font-weight: 700; margin-bottom: 3px;
+        }
+        .welcome-sub   { font-size: 0.82rem; opacity: 0.7; margin-bottom: 8px; }
         .role-badge {
           display: inline-flex; align-items: center; gap: 5px;
-          padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
+          padding: 4px 12px; border-radius: 20px;
+          font-size: 0.76rem; font-weight: 600;
         }
 
-        /* Semaphore card */
+        /* ── Semaphore card ── */
         .semaphore-card {
-          width: 100%; display: flex; align-items: center; gap: var(--space-lg);
-          padding: 18px 20px;
+          width: 100%; display: flex; align-items: center; gap: var(--space-md);
+          padding: 16px 18px;
           background: white; border: 2px solid var(--sem-color);
           border-radius: var(--radius-xl); cursor: pointer; text-align: left;
           font-family: var(--font-body);
@@ -388,25 +391,37 @@ export default function DashboardPage() {
         }
         .semaphore-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .semaphore-card:active { transform: translateY(0); }
-        .sem-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
-        .sem-icon-wrap {
-          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+
+        .sem-left {
+          display: flex; align-items: center; gap: 12px;
+          flex: 1; min-width: 0;
         }
-        .sem-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
-        .sem-sub   { font-size: 0.8rem; color: var(--warm-gray); }
-        .sem-dots  { display: flex; gap: 16px; flex-shrink: 0; }
+        .sem-icon-wrap {
+          width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 1.25rem;
+        }
+        .sem-title { font-weight: 700; font-size: 0.94rem; color: var(--espresso); margin-bottom: 2px; }
+        .sem-sub   { font-size: 0.78rem; color: var(--warm-gray); }
+
+        .sem-dots  { display: flex; gap: 12px; flex-shrink: 0; }
         .sem-dot-item { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-        .sem-dot-circle { width: 10px; height: 10px; border-radius: 50%; }
-        .sem-dot-count  { font-size: 1rem; font-weight: 700; line-height: 1; }
-        .sem-dot-label  { font-size: 0.62rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-        .sem-arrow { font-size: 1.1rem; color: var(--sem-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
+        .sem-dot-circle { width: 9px; height: 9px; border-radius: 50%; }
+        .sem-dot-count  { font-size: 0.96rem; font-weight: 700; line-height: 1; }
+        .sem-dot-label  {
+          font-size: 0.6rem; color: var(--warm-gray);
+          font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .sem-arrow {
+          font-size: 1.1rem; color: var(--sem-color); font-weight: 700;
+          flex-shrink: 0; transition: transform var(--transition-fast);
+        }
         .semaphore-card:hover .sem-arrow { transform: translateX(4px); }
 
-        /* Promotions card */
+        /* ── Promo dash card ── */
         .promo-dash-card {
-          width: 100%; display: flex; align-items: center; gap: var(--space-lg);
-          padding: 18px 20px;
+          width: 100%; display: flex; align-items: center; gap: var(--space-md);
+          padding: 16px 18px;
           background: white; border: 2px solid var(--promo-color);
           border-radius: var(--radius-xl); cursor: pointer; text-align: left;
           font-family: var(--font-body);
@@ -416,26 +431,32 @@ export default function DashboardPage() {
         }
         .promo-dash-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .promo-dash-card:active { transform: translateY(0); }
-        .promo-dash-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+        .promo-dash-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
         .promo-dash-icon {
-          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+          width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center; font-size: 1.25rem;
         }
-        .promo-dash-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
-        .promo-dash-sub   { font-size: 0.8rem; color: var(--warm-gray); }
+        .promo-dash-title { font-weight: 700; font-size: 0.94rem; color: var(--espresso); margin-bottom: 2px; }
+        .promo-dash-sub   { font-size: 0.78rem; color: var(--warm-gray); }
         .promo-dash-badge {
           display: flex; flex-direction: column; align-items: center; gap: 2px;
           padding: 6px 12px; border-radius: 12px; flex-shrink: 0;
         }
         .promo-dash-badge-count { font-size: 1.3rem; font-weight: 800; line-height: 1; }
-        .promo-dash-badge-label { font-size: 0.6rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-        .promo-dash-arrow { font-size: 1.1rem; color: var(--promo-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
+        .promo-dash-badge-label {
+          font-size: 0.6rem; color: var(--warm-gray);
+          font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .promo-dash-arrow {
+          font-size: 1.1rem; color: var(--promo-color); font-weight: 700;
+          flex-shrink: 0; transition: transform var(--transition-fast);
+        }
         .promo-dash-card:hover .promo-dash-arrow { transform: translateX(4px); }
 
-        /* Restock card */
+        /* ── Restock card ── */
         .restock-card {
-          width: 100%; display: flex; align-items: center; gap: var(--space-lg);
-          padding: 18px 20px;
+          width: 100%; display: flex; align-items: center; gap: var(--space-md);
+          padding: 16px 18px;
           background: white; border: 2px solid var(--rst-color);
           border-radius: var(--radius-xl); cursor: pointer; text-align: left;
           font-family: var(--font-body);
@@ -445,44 +466,56 @@ export default function DashboardPage() {
         }
         .restock-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .restock-card:active { transform: translateY(0); }
-        .rst-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+        .rst-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
         .rst-icon-wrap {
-          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+          width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center; font-size: 1.25rem;
         }
-        .rst-title { font-weight: 700; font-size: 0.95rem; color: var(--espresso); margin-bottom: 2px; }
-        .rst-sub   { font-size: 0.8rem; color: var(--warm-gray); }
+        .rst-title { font-weight: 700; font-size: 0.94rem; color: var(--espresso); margin-bottom: 2px; }
+        .rst-sub   { font-size: 0.78rem; color: var(--warm-gray); }
         .rst-badge {
           display: flex; flex-direction: column; align-items: center; gap: 2px;
           padding: 6px 12px; border-radius: 12px;
           background: rgba(230,126,34,0.10); flex-shrink: 0;
         }
         .rst-badge-count { font-size: 1.3rem; font-weight: 800; color: #E67E22; line-height: 1; }
-        .rst-badge-label { font-size: 0.6rem; color: var(--warm-gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-        .rst-arrow { font-size: 1.1rem; color: var(--rst-color); font-weight: 700; flex-shrink: 0; transition: transform var(--transition-fast); }
+        .rst-badge-label {
+          font-size: 0.6rem; color: var(--warm-gray);
+          font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .rst-arrow {
+          font-size: 1.1rem; color: var(--rst-color); font-weight: 700;
+          flex-shrink: 0; transition: transform var(--transition-fast);
+        }
         .restock-card:hover .rst-arrow { transform: translateX(4px); }
 
-        /* Info card */
+        /* ── Info card ── */
         .info-card {
           background: white; border-radius: var(--radius-lg);
           padding: var(--space-xl); border: 1px solid var(--cream-dark);
-          box-shadow: var(--shadow-sm); animation: slideUp 0.4s ease 0.2s both;
+          box-shadow: var(--shadow-sm);
         }
         .info-title {
-          font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--espresso);
-          margin-bottom: var(--space-lg); padding-bottom: var(--space-md); border-bottom: 1px solid var(--cream-dark);
+          font-family: var(--font-display); font-size: 1rem; font-weight: 700;
+          color: var(--espresso); margin-bottom: var(--space-md);
+          padding-bottom: var(--space-md); border-bottom: 1px solid var(--cream-dark);
         }
         .info-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
-        .info-item  { display: flex; flex-direction: column; gap: 4px; }
-        .info-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warm-gray-light); }
-        .info-value { font-size: 0.88rem; color: var(--espresso); font-weight: 500; }
+        .info-item  { display: flex; flex-direction: column; gap: 3px; }
+        .info-label {
+          font-size: 0.68rem; font-weight: 600;
+          text-transform: uppercase; letter-spacing: 0.08em;
+          color: var(--warm-gray-light);
+        }
+        .info-value { font-size: 0.9rem; color: var(--espresso); font-weight: 500; }
 
-        /* Section headings & module grid */
+        /* ── Section headings & module grid ── */
         .section-heading {
           font-family: var(--font-display); font-size: 1rem; font-weight: 700;
           color: var(--espresso); margin-bottom: var(--space-md);
         }
         .modules-grid { display: flex; flex-direction: column; gap: 7px; }
+
         .module-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-md);
           padding: 14px 16px; background: white;
@@ -498,15 +531,18 @@ export default function DashboardPage() {
         .module-card.owner-module:hover { border-color: #E67E22; }
         .module-card.ready:active { transform: translateY(0); }
         .module-card.soon  { opacity: 0.5; cursor: not-allowed; }
+
         .module-icon  { font-size: 1.4rem; flex-shrink: 0; }
         .module-text  { flex: 1; min-width: 0; }
-        .module-title { font-weight: 600; font-size: 0.92rem; color: var(--espresso); margin-bottom: 2px; }
+        .module-title { font-weight: 600; font-size: 0.94rem; color: var(--espresso); margin-bottom: 2px; }
         .module-desc  { font-size: 0.78rem; color: var(--warm-gray); }
+
         .module-arrow {
           font-size: 1rem; color: var(--amber); font-weight: 700; flex-shrink: 0;
           transition: transform var(--transition-fast);
         }
         .module-card.ready:hover .module-arrow { transform: translateX(3px); }
+
         .module-count-badge {
           display: inline-flex; align-items: center; justify-content: center;
           min-width: 22px; height: 22px; padding: 0 5px;
@@ -515,17 +551,44 @@ export default function DashboardPage() {
           animation: pulse-badge 2s ease infinite;
         }
         .module-badge {
-          font-size: 0.63rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-          color: var(--warm-gray-light); background: var(--cream-dark);
-          padding: 3px 8px; border-radius: 10px; flex-shrink: 0;
+          font-size: 0.63rem; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.06em; color: var(--warm-gray-light);
+          background: var(--cream-dark); padding: 3px 8px;
+          border-radius: 10px; flex-shrink: 0;
         }
 
+        /* ── Mobile adjustments ── */
         @media (max-width: 480px) {
-          .info-grid    { grid-template-columns: 1fr; }
-          .welcome-card { flex-direction: column; text-align: center; }
+          .dash-main    { padding: var(--space-md) var(--space-sm); gap: var(--space-md); }
+          .welcome-card { flex-direction: column; text-align: center; padding: var(--space-lg); }
+          .welcome-avatar { width: 44px; height: 44px; font-size: 1.2rem; }
           .sem-dots     { display: none; }
-          .dash-main    { padding: var(--space-lg) var(--space-md); }
+          .info-grid    { grid-template-columns: 1fr; }
           .rst-badge, .promo-dash-badge { display: none; }
+          /* Cards de estado: más compactas */
+          .semaphore-card,
+          .promo-dash-card,
+          .restock-card { padding: 13px 14px; gap: 12px; }
+          .sem-icon-wrap,
+          .promo-dash-icon,
+          .rst-icon-wrap { width: 36px; height: 36px; font-size: 1.1rem; }
+          .sem-title,
+          .promo-dash-title,
+          .rst-title { font-size: 0.88rem; }
+          .sem-sub,
+          .promo-dash-sub,
+          .rst-sub   { font-size: 0.74rem; }
+        }
+
+        /* ── Desktop ── */
+        @media (min-width: 768px) {
+          .dash-main { padding: var(--space-xl) var(--space-lg); gap: var(--space-xl); }
+          .welcome-card { padding: var(--space-xl) var(--space-2xl); }
+          .welcome-avatar { width: 54px; height: 54px; font-size: 1.5rem; }
+          .module-title { font-size: 1rem; }
+          .module-desc  { font-size: 0.84rem; }
+          .section-heading { font-size: 1.1rem; }
+          .info-value { font-size: 0.96rem; }
         }
       `}</style>
     </div>

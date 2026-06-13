@@ -30,18 +30,15 @@ export default function AppTopbar() {
   const user        = useSelector(selectUser);
   const token       = useSelector(selectToken);
 
-  // Expiration counts
   const greenCount   = useSelector(selectGreenCount);
   const yellowCount  = useSelector(selectYellowCount);
   const redCount     = useSelector(selectRedCount);
   const expiredCount = useSelector(selectExpiredCount);
   const urgentCount  = expiredCount + redCount + yellowCount;
 
-  // Restock (OWNER only)
   const restockCount  = useSelector(selectRestockCount);
   const restockStatus = useSelector(selectRestockStatus);
 
-  // Promotions suggestions count (OWNER only)
   const promotionSuggestionsCount  = useSelector(selectSuggestionsCount);
   const promotionSuggestionsStatus = useSelector(selectSuggestionsStatus);
 
@@ -49,14 +46,12 @@ export default function AppTopbar() {
 
   const { requestPermission } = useNotifications();
 
-  // ── Fetch expiration semaphore on mount ──────────────────────────────────
   useEffect(() => {
     if (!token) return;
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
   }, [token, dispatch]);
 
-  // ── Fetch restock suggestions on mount if OWNER ──────────────────────────
   useEffect(() => {
     if (!token || !isOwner) return;
     if (restockStatus === 'idle') {
@@ -64,7 +59,6 @@ export default function AppTopbar() {
     }
   }, [token, isOwner, restockStatus, dispatch]);
 
-  // ── Fetch promotion suggestions on mount if OWNER ────────────────────────
   useEffect(() => {
     if (!token || !isOwner) return;
     if (promotionSuggestionsStatus === 'idle') {
@@ -77,12 +71,10 @@ export default function AppTopbar() {
     navigate('/login', { replace: true });
   };
 
-  // ── Badge colors ─────────────────────────────────────────────────────────
   const expirationBadgeColor  = expiredCount > 0 ? '#C0392B' : redCount > 0 ? '#E74C3C' : '#E67E22';
   const restockBadgeColor     = '#E67E22';
   const promotionsBadgeColor  = '#D68910';
 
-  // ── Navigation items ──────────────────────────────────────────────────────
   const BASE_NAV = [
     { to: '/dashboard',   label: 'Inicio',       icon: '🏠', badge: null },
     { to: '/stock',       label: 'Stock',         icon: '📦', badge: null },
@@ -92,9 +84,6 @@ export default function AppTopbar() {
       badge:      urgentCount > 0 ? urgentCount : null,
       badgeColor: expirationBadgeColor,
     },
-    // Promociones: accesible para ambos roles
-    // OWNER ve badge con cantidad de sugerencias pendientes
-    // EMPLOYEE ve badge con cantidad de promociones activas (si hay)
     {
       to: '/promotions',  label: 'Promociones',   icon: '🏷️',
       badge:      isOwner && promotionSuggestionsCount > 0
@@ -107,7 +96,6 @@ export default function AppTopbar() {
     { to: '/suppliers',   label: 'Proveedores',   icon: '🚚', badge: null },
   ];
 
-  // Items exclusivos del OWNER
   const OWNER_NAV = isOwner
     ? [
         {
@@ -122,22 +110,27 @@ export default function AppTopbar() {
 
   const NAV_ITEMS = [...BASE_NAV, ...OWNER_NAV];
 
+  /* Inicial del usuario para el avatar */
+  const avatarLetter = user?.firstName?.[0]?.toUpperCase() || '?';
+
   return (
     <header className="topbar">
       <div className="topbar-inner">
-        {/* Brand */}
-        <NavLink to="/dashboard" className="topbar-brand">
-          <img src="/logo_panstock.png" alt="PanStock" width="63" height="63" />
+
+        {/* ── Brand ── */}
+        <NavLink to="/dashboard" className="topbar-brand" aria-label="PanStock — Inicio">
+          <img src="/logo_panstock.png" alt="PanStock" width="48" height="48" />
           <span className="topbar-brand-name">PanStock</span>
         </NavLink>
 
-        {/* Nav */}
+        {/* ── Nav (scroll horizontal en mobile) ── */}
         <nav className="topbar-nav" aria-label="Navegación principal">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) => `topbar-link${isActive ? ' active' : ''}`}
+              title={item.label}
             >
               <span className="topbar-link-icon" aria-hidden="true">{item.icon}</span>
               <span className="topbar-link-label">{item.label}</span>
@@ -154,19 +147,18 @@ export default function AppTopbar() {
           ))}
         </nav>
 
-        {/* Right side */}
+        {/* ── Right side ── */}
         <div className="topbar-right">
           <NotificationBell onRequestPermission={requestPermission} />
 
+          {/* Avatar con inicial */}
           {user && (
-            <div className="topbar-user-info">
-              <span className="topbar-avatar" title={`${user.firstName} ${user.lastName}`}>
-                {user.firstName?.[0]?.toUpperCase() || '?'}
-              </span>
-              <span className="topbar-username hide-mobile">
-                {user.firstName}&nbsp;
-              
-              </span>
+            <div
+              className="topbar-avatar"
+              title={`${user.firstName || ''} ${user.lastName || ''}`.trim()}
+              aria-label="Usuario actual"
+            >
+              {avatarLetter}
             </div>
           )}
 
@@ -176,87 +168,228 @@ export default function AppTopbar() {
             title="Cerrar sesión"
             aria-label="Cerrar sesión"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               <path d="M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span className="hide-mobile">Salir</span>
+            <span className="topbar-logout-label">Salir</span>
           </button>
         </div>
       </div>
 
       <style>{`
+        /* ══════════════════════════════════════
+           TOPBAR — mobile first
+           ══════════════════════════════════════ */
         .topbar {
-          position: sticky; top: 0; z-index: 200;
-          background: rgba(247,243,238,0.96);
-          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          position: sticky;
+          top: 0;
+          z-index: 200;
+          background: rgba(247,243,238,0.97);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid var(--cream-dark);
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+          box-shadow: 0 2px 12px rgba(0,0,0,0.08);
         }
+
         .topbar-inner {
-         
           margin: 0 auto;
-          padding: 0 var(--space-lg);
-          display: flex; align-items: center; gap: var(--space-md);
-          height: 84px;
+          padding: 0 12px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 60px;        /* más compacto en mobile */
         }
+
+        /* ── Brand ── */
         .topbar-brand {
-          display: flex; align-items: center; gap: 7px;
-          text-decoration: none; flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          text-decoration: none;
+          flex-shrink: 0;
+        }
+        .topbar-brand img {
+          width: 36px;
+          height: 36px;
+          object-fit: contain;
         }
         .topbar-brand-name {
-          font-family: var(--font-display); font-size: 1.85rem;
-          font-weight: 700; color: var(--espresso); letter-spacing: -0.01em;
+          font-family: var(--font-display);
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: var(--espresso);
+          letter-spacing: -0.01em;
+          /* Ocultar en mobile muy estrecho */
+          display: none;
         }
+
+        /* ── Nav ── */
         .topbar-nav {
-          display: flex; align-items: center; gap: 1px;
-          flex: 1; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          flex: 1;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          /* Padding para que el primer/último item no quede pegado al borde */
+          padding: 0 2px;
         }
         .topbar-nav::-webkit-scrollbar { display: none; }
+
         .topbar-link {
-          position: relative; display: flex; align-items: center; gap: 5px;
-          padding: 6px 9px; border-radius: var(--radius-md);
-          text-decoration: none; font-size: 1.2rem; font-weight: 500;
-          color: var(--esspresso-mid); white-space: nowrap; flex-shrink: 0;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          padding: 6px 8px;
+          border-radius: var(--radius-md);
+          text-decoration: none;
+          font-size: 0.6rem;
+          font-weight: 600;
+          color: var(--warm-gray);
+          white-space: nowrap;
+          flex-shrink: 0;
           transition: background var(--transition-fast), color var(--transition-fast);
+          min-width: 44px;      /* área táctil mínima */
+          text-align: center;
         }
         .topbar-link:hover  { background: var(--cream-dark); color: var(--espresso); }
-        .topbar-link.active { background: var(--espresso); color: var(--cream); font-weight: 600; }
-        .topbar-link-icon  { font-size: 1.3rem; line-height: 1; }
-        .topbar-link-label { line-height: 1; }
-        .topbar-badge {
-          display: inline-flex; align-items: center; justify-content: center;
-          min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
-          font-size: 0.62rem; font-weight: 700; color: white; line-height: 1;
-          animation: pulse-badge 2s ease infinite;
+        .topbar-link.active {
+          background: var(--espresso);
+          color: var(--cream);
+          font-weight: 700;
         }
-        @keyframes pulse-badge { 0%,100%{ opacity:1 } 50%{ opacity:0.65 } }
 
-        .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .topbar-user-info { display: flex; align-items: center; gap: 7px; }
-        .topbar-avatar {
-          width: 28px; height: 28px; border-radius: 50%;
-          background: var(--amber); color: white;
-          display: flex; align-items: center; justify-content: center;
-          font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
-          flex-shrink: 0; cursor: default;
+        .topbar-link-icon  {
+          font-size: 1.35rem;
+          line-height: 1;
+          display: block;
         }
-        .topbar-username { font-size: 1.2rem; color: var(--espresso-mid); font-weight: 500; }
+        .topbar-link-label {
+          line-height: 1;
+          font-size: 0.58rem;
+          letter-spacing: 0.01em;
+        }
+
+        .topbar-badge {
+          position: absolute;
+          top: 2px;
+          right: 2px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 16px;
+          height: 16px;
+          padding: 0 3px;
+          border-radius: 8px;
+          font-size: 0.55rem;
+          font-weight: 800;
+          color: white;
+          line-height: 1;
+          animation: pulse-badge 2s ease infinite;
+          pointer-events: none;
+        }
+
+        /* ── Right side ── */
+        .topbar-right {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+
+        .topbar-avatar {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: var(--amber);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--font-display);
+          font-size: 0.82rem;
+          font-weight: 700;
+          flex-shrink: 0;
+          cursor: default;
+          user-select: none;
+        }
+
         .topbar-logout {
-          display: flex; align-items: center; gap: 5px;
-          padding: 6px 11px; background: none; font-weight: 500;
-          border: 1.5px solid var(--cream-dark); border-radius: var(--radius-md);
-          font-family: var(--font-display); font-size: 1.15rem; color: var(--espresso-soft);
-          cursor: pointer; transition: all var(--transition-fast); flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 8px;
+          background: none;
+          border: 1.5px solid var(--cream-dark);
+          border-radius: var(--radius-md);
+          font-family: var(--font-body);
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: var(--warm-gray);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          flex-shrink: 0;
         }
         .topbar-logout:hover { border-color: var(--error); color: var(--error); }
+        .topbar-logout-label { display: none; }
 
-        @media (max-width: 780px) {
-          .hide-mobile       { display: none !important; }
-          .topbar-link-label { display: none; }
-          .topbar-link       { padding: 7px 8px; }
-          .topbar-inner      { gap: var(--space-sm); padding: 0 var(--space-sm); }
-          .topbar-brand-name { display: none; }
+        /* ══════════════════════════════════════
+           TABLET (≥ 600px)
+           ══════════════════════════════════════ */
+        @media (min-width: 600px) {
+          .topbar-inner { padding: 0 16px; height: 68px; gap: 10px; }
+
+          .topbar-brand img   { width: 42px; height: 42px; }
+          .topbar-brand-name  { display: block; font-size: 1.45rem; }
+
+          .topbar-link {
+            flex-direction: row;
+            gap: 5px;
+            padding: 7px 10px;
+            font-size: 0.78rem;
+            min-width: unset;
+          }
+          .topbar-link-icon  { font-size: 1.2rem; }
+          .topbar-link-label { font-size: 0.78rem; }
+
+          /* Badge repositioned for horizontal layout */
+          .topbar-badge {
+            position: static;
+            min-width: 17px;
+            height: 17px;
+            padding: 0 4px;
+            font-size: 0.62rem;
+          }
+
+          .topbar-avatar { width: 32px; height: 32px; font-size: 0.88rem; }
+          .topbar-logout-label { display: inline; }
+          .topbar-logout { padding: 6px 12px; font-size: 0.88rem; gap: 5px; }
+        }
+
+        /* ══════════════════════════════════════
+           DESKTOP (≥ 900px)
+           ══════════════════════════════════════ */
+        @media (min-width: 900px) {
+          .topbar-inner { padding: 0 var(--space-lg); height: 76px; gap: 12px; }
+
+          .topbar-brand img   { width: 52px; height: 52px; }
+          .topbar-brand-name  { font-size: 1.75rem; }
+
+          .topbar-link {
+            gap: 6px;
+            padding: 7px 10px;
+            font-size: 0.9rem;
+            border-radius: var(--radius-md);
+          }
+          .topbar-link-icon  { font-size: 1.25rem; }
+          .topbar-link-label { font-size: 0.9rem; }
+
+          .topbar-avatar { width: 34px; height: 34px; font-size: 0.92rem; }
+          .topbar-logout { font-size: 0.92rem; }
         }
       `}</style>
     </header>
