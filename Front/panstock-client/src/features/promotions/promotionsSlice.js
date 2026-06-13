@@ -1,11 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 
-//const BASE_URL = import.meta.env.VITE_API_URL;
-
 const BASE_URL = import.meta.env.MODE === 'development' 
   ? '' 
   : import.meta.env.VITE_API_URL;
-
 
 const authHeaders = (token) => ({
   'Content-Type': 'application/json',
@@ -28,7 +25,6 @@ const handleResponse = async (res) => {
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
 
-/** GET /api/promotions/suggestions — OWNER only */
 export const fetchPromotionSuggestions = createAsyncThunk(
   'promotions/fetchSuggestions',
   async ({ token }, { rejectWithValue }) => {
@@ -42,7 +38,6 @@ export const fetchPromotionSuggestions = createAsyncThunk(
   }
 );
 
-/** GET /api/promotions — OWNER + EMPLOYEE */
 export const fetchPromotions = createAsyncThunk(
   'promotions/fetchAll',
   async ({ token }, { rejectWithValue }) => {
@@ -56,7 +51,6 @@ export const fetchPromotions = createAsyncThunk(
   }
 );
 
-/** GET /api/promotions/active — OWNER + EMPLOYEE */
 export const fetchActivePromotions = createAsyncThunk(
   'promotions/fetchActive',
   async ({ token }, { rejectWithValue }) => {
@@ -70,17 +64,6 @@ export const fetchActivePromotions = createAsyncThunk(
   }
 );
 
-/**
- * POST /api/promotions — OWNER only
- * body: {
- *   productId, batchId?, createdById?,
- *   title, description?,
- *   discountType: 'PERCENTAGE' | 'FIXED_PRICE',
- *   discountPercentage? | promotionalPrice?,
- *   startDate, endDate,
- *   suggestedBySystem?
- * }
- */
 export const createPromotion = createAsyncThunk(
   'promotions/create',
   async ({ token, data }, { rejectWithValue }) => {
@@ -96,7 +79,6 @@ export const createPromotion = createAsyncThunk(
   }
 );
 
-/** PATCH /api/promotions/{id}/cancel — OWNER only */
 export const cancelPromotion = createAsyncThunk(
   'promotions/cancel',
   async ({ token, id }, { rejectWithValue }) => {
@@ -116,21 +98,15 @@ export const cancelPromotion = createAsyncThunk(
 const promotionsSlice = createSlice({
   name: 'promotions',
   initialState: {
-    // Lista completa de promociones
     items: [],
-    listStatus: 'idle',   // idle | loading | succeeded | failed
+    listStatus: 'idle',
     listError: null,
-
-    // Sugerencias del sistema (solo OWNER)
     suggestions: [],
     suggestionsStatus: 'idle',
     suggestionsError: null,
-
-    // Acción (crear / cancelar)
     actionStatus: 'idle',
     actionError: null,
     lastCreated: null,
-
     lastFetch: null,
   },
   reducers: {
@@ -153,7 +129,6 @@ const promotionsSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // ── fetchPromotionSuggestions ──
     builder
       .addCase(fetchPromotionSuggestions.pending, (s) => {
         s.suggestionsStatus = 'loading'; s.suggestionsError = null;
@@ -166,7 +141,6 @@ const promotionsSlice = createSlice({
         s.suggestionsStatus = 'failed'; s.suggestionsError = a.payload;
       });
 
-    // ── fetchPromotions ──
     builder
       .addCase(fetchPromotions.pending, (s) => {
         s.listStatus = 'loading'; s.listError = null;
@@ -180,7 +154,6 @@ const promotionsSlice = createSlice({
         s.listStatus = 'failed'; s.listError = a.payload;
       });
 
-    // ── fetchActivePromotions — actualiza la lista con las activas ──
     builder
       .addCase(fetchActivePromotions.pending, (s) => {
         s.listStatus = 'loading'; s.listError = null;
@@ -194,7 +167,6 @@ const promotionsSlice = createSlice({
         s.listStatus = 'failed'; s.listError = a.payload;
       });
 
-    // ── createPromotion ──
     builder
       .addCase(createPromotion.pending, (s) => {
         s.actionStatus = 'loading'; s.actionError = null;
@@ -202,9 +174,7 @@ const promotionsSlice = createSlice({
       .addCase(createPromotion.fulfilled, (s, a) => {
         s.actionStatus = 'succeeded';
         s.lastCreated  = a.payload;
-        // Insertar al inicio de la lista para que aparezca primero
         s.items.unshift(a.payload);
-        // Quitar de sugerencias el lote que acabamos de promover
         if (a.payload?.batchId) {
           s.suggestions = s.suggestions.filter(
             (sg) => sg.batchId !== a.payload.batchId
@@ -215,7 +185,6 @@ const promotionsSlice = createSlice({
         s.actionStatus = 'failed'; s.actionError = a.payload;
       });
 
-    // ── cancelPromotion ──
     builder
       .addCase(cancelPromotion.pending, (s) => {
         s.actionStatus = 'loading'; s.actionError = null;
@@ -236,21 +205,102 @@ export const {
   clearPromotionsState,
 } = promotionsSlice.actions;
 
-// ─── Selectors ────────────────────────────────────────────────────────────────
+// ─── Helpers internos ─────────────────────────────────────────────────────────
+
+/**
+ * Devuelve la fecha local de hoy en formato YYYY-MM-DD.
+ * Se usa para comparar con batchExpirationDate (que viene como string YYYY-MM-DD).
+ */
+const todayISO = () => {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  return new Date(d.getTime() - offset * 60000).toISOString().split('T')[0];
+};
+
+/**
+ * Un lote se considera "vencido completamente" si su fecha de vencimiento
+ * es anterior (estricta) a la fecha actual (sin hora).
+ * batchExpirationDate viene como 'YYYY-MM-DD' desde el backend.
+ */
+const isBatchFullyExpired = (batchExpirationDate) => {
+  if (!batchExpirationDate) return false;
+  const expStr = typeof batchExpirationDate === 'string' && batchExpirationDate.length > 10
+    ? batchExpirationDate.split('T')[0]
+    : batchExpirationDate;
+  return expStr < todayISO();
+};
+
+// ─── Selectores ───────────────────────────────────────────────────────────────
 
 export const selectPromotions          = (s) => s.promotions.items;
 export const selectPromotionsStatus    = (s) => s.promotions.listStatus;
 export const selectPromotionsError     = (s) => s.promotions.listError;
-export const selectPromotionSuggestions       = (s) => s.promotions.suggestions;
+
+/** Sugerencias del sistema: solo para productos activos (el backend ya filtra, pero
+ *  añadimos una segunda capa en el frontend usando el catálogo de productos en store). */
+export const selectPromotionSuggestions = (s) => {
+  const suggestions = s.promotions.suggestions ?? [];
+  // El backend devuelve sugerencias solo de lotes AVAILABLE no vencidos y sin promo activa.
+  // En el frontend filtramos adicionalmente por si el producto fue inactivado recientemente
+  // (puede haber un gap entre el backend y el estado del catálogo en Redux).
+  const activeProductIds = new Set(
+    (s.products?.items ?? [])
+      .filter((p) => p.active)
+      .map((p) => p.id)
+  );
+
+  // Si no hay productos en el store (aún no se cargaron), devolvemos todas las sugerencias
+  // para no bloquear la UI mientras carga.
+  if (activeProductIds.size === 0) return suggestions;
+
+  return suggestions.filter((sg) => activeProductIds.has(sg.productId));
+};
+
 export const selectSuggestionsStatus   = (s) => s.promotions.suggestionsStatus;
 export const selectSuggestionsError    = (s) => s.promotions.suggestionsError;
+
 export const selectPromotionAction     = (s) => ({
   status:      s.promotions.actionStatus,
   error:       s.promotions.actionError,
   lastCreated: s.promotions.lastCreated,
 });
-export const selectActivePromotionsCount = (s) =>
-  s.promotions.items.filter((p) => p.status === 'ACTIVE').length;
-export const selectSuggestionsCount    = (s) => s.promotions.suggestions.length;
+
+/**
+ * Promociones visibles en la UI:
+ * - Filtramos las que pertenecen a un producto inactivo (hidden junto con el producto).
+ * - Filtramos las ACTIVAS cuyo lote ya venció completamente (fecha < hoy):
+ *   en ese caso la promo debe eliminarse visualmente (no tiene sentido mostrarla).
+ *   Las promos CANCELLED o EXPIRED se muestran igual en el historial.
+ */
+export const selectVisiblePromotions = (s) => {
+  const promos = s.promotions.items ?? [];
+  const activeProductIds = new Set(
+    (s.products?.items ?? [])
+      .filter((p) => p.active)
+      .map((p) => p.id)
+  );
+
+  // Si no hay productos cargados, devolver todas
+  if (activeProductIds.size === 0) return promos;
+
+  return promos.filter((promo) => {
+    // 1. Ocultar si el producto está inactivo
+    if (!activeProductIds.has(promo.productId)) return false;
+
+    // 2. Ocultar promos ACTIVAS cuyo lote ya venció completamente
+    if (promo.status === 'ACTIVE' && isBatchFullyExpired(promo.batchExpirationDate)) {
+      return false;
+    }
+
+    return true;
+  });
+};
+
+export const selectActivePromotionsCount = (s) => {
+  const visible = selectVisiblePromotions(s);
+  return visible.filter((p) => p.status === 'ACTIVE').length;
+};
+
+export const selectSuggestionsCount    = (s) => selectPromotionSuggestions(s).length;
 
 export default promotionsSlice.reducer;

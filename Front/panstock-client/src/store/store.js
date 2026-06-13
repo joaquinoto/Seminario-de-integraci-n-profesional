@@ -80,9 +80,13 @@ const appReducer = combineReducers({
 
 const rootReducer = (state, action) => {
   if (action.type === 'auth/logout') {
-    // Al cerrar sesión limpiamos todo excepto auth y notifications.
-    const { auth, notifications } = state;
-    return appReducer({ auth, notifications }, action);
+    // Al cerrar sesión limpiamos todo excepto auth, notifications y
+    // autoWasteNotification. Este último se preserva para que, si el
+    // usuario cierra sesión sin confirmar el descarte físico, el modal
+    // vuelva a aparecer cuando cualquier usuario inicie sesión de nuevo
+    // en el mismo día.
+    const { auth, notifications, autoWasteNotification } = state;
+    return appReducer({ auth, notifications, autoWasteNotification }, action);
   }
   return appReducer(state, action);
 };

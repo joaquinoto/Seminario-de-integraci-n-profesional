@@ -45,4 +45,14 @@ public class ProductRepositoryImpl implements ProductRepository {
     public List<Product> findActiveByCategoryId(Long categoryId) {
         return productJpaRepository.findByCategoryIdAndActiveTrueOrderByNameAsc(categoryId);
     }
+
+    @Override
+    public boolean existsByNameIgnoreCase(String name) {
+        return productJpaRepository.existsByNameIgnoreCase(name);
+    }
+
+    @Override
+    public boolean existsByNameIgnoreCaseAndIdNot(String name, Long id) {
+        return productJpaRepository.existsByNameIgnoreCaseAndIdNot(name, id);
+    }
 }
