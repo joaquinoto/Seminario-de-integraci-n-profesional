@@ -4,13 +4,14 @@
    ============================================= */
 
 * {
-   margin: 0;
-   padding: 0;
-   box-sizing: border-box;
-   /*
-   box-shadow: inset -10px 0 35px rgb(33, 167, 15);    */
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 
-   overscroll-behavior: none;
+  /*
+   box-shadow: inset -10px 0 35px rgb(33, 167, 15);    */
+   
+  /* overscroll-behavior removido de * — causaba bloqueo de scroll en DevTools mobile */
 }
 
 *::before,
@@ -79,6 +80,8 @@ html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  /* Previene bounce/rubber-band solo en html y body, no en * */
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -89,7 +92,8 @@ body {
   line-height: 1.65;
   min-height: 100vh;
   overflow-x: hidden;
-  overscroll-behavior: none;
+  /* overscroll-behavior-y: none evita bounce sin bloquear scroll en simulador */
+  overscroll-behavior-y: none;
 }
 
 #root {
@@ -233,54 +237,31 @@ input, select, textarea, button {
 }
 
 /* ══════════════════════════════════════════════
-   FIX MOBILE — overflow y word-break defensivos
-   Aplica sobre classNames que SÍ existen en el proyecto
+  MOBILE — overflow y word-break defensivos
+   Solo classNames que existen en el proyecto
    ══════════════════════════════════════════════ */
 
 /*
-  Regla raíz del problema:
-  En flexbox, min-width por defecto es "auto" (tamaño del contenido).
-  Esto hace que el hijo crezca más allá de su contenedor.
-  Solución: min-width:0 en el contenedor de texto que es hijo directo de flex.
+  Causa raíz: en flexbox el min-width por defecto es "auto"
+  (tamaño del contenido), lo que hace que el hijo desborde su contenedor.
+  Solución: min-width:0 en el contenedor de texto hijo directo del flex.
 */
 
-/* StockPage — hijos del grid de 2 columnas */
-.stock-summary-grid > * {
-  min-width: 0;
-}
-
-/* SuppliersPage — contenedor de info de texto */
-.sup-info {
-  min-width: 0;
-  overflow: hidden;
-}
-.sup-name,
-.sup-notes,
-.sup-contact {
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
-
-/* CategoriesPage — si existe un componente de categorías similar */
+/* CategoriesPage */
 .cat-info {
   min-width: 0;
   overflow: hidden;
 }
+.cat-name { word-break: break-word; }
+.cat-desc { word-break: break-word; overflow-wrap: break-word; }
 
-/* Regla universal para grids CSS nativos:
-   cualquier hijo directo de un grid recibe min-width:0.
-   Seguro porque el contenido interno controla su propio tamaño. */
-.stock-summary-grid > *,
-.prod-list > * {
+/* SuppliersPage */
+.sup-info {
   min-width: 0;
+  overflow: hidden;
 }
+.sup-name  { word-break: break-word; }
+.sup-notes { word-break: break-word; overflow-wrap: break-word; }
 
-/* ── Inputs en mobile: evitar zoom iOS ── */
-@media (max-width: 767px) {
-  .stock-search,
-  .sup-search,
-  .stock-filter-sel,
-  .sup-filter-sel {
-    font-size: 16px !important;
-  }
-}
+/* StockPage — hijos del grid de 2 columnas */
+.stock-summary-grid > * { min-width: 0; }

@@ -7,7 +7,6 @@ import {
   createPromotion,
   cancelPromotion,
   clearPromotionActionState,
-  clearPromotionsState,
   selectVisiblePromotions,
   selectPromotionsStatus,
   selectPromotionsError,
@@ -15,6 +14,8 @@ import {
   selectSuggestionsStatus,
   selectSuggestionsError,
   selectPromotionAction,
+  PROMO_TYPE_TAG,
+  extractExtendedType,
 } from '../features/promotions/promotionsSlice';
 import { selectToken, selectUser } from '../features/auth/authSlice';
 import { Modal, ConfirmDialog, TableSkeleton } from '../components/ui/CatalogUI';
@@ -36,10 +37,30 @@ const EXPIRATION_STATUS_CONFIG = {
   GREEN:  { color: '#1E8449', icon: '🟢', label: 'OK'           },
 };
 
+// Tipos extendidos de descuento (incluyendo los nuevos)
 const DISCOUNT_TYPE_LABELS = {
   PERCENTAGE:  '% Porcentaje',
   FIXED_PRICE: '$ Precio fijo',
 };
+
+// Opciones del formulario de creación de promo
+const DISCOUNT_TYPE_OPTIONS = [
+  {
+    v:     'PERCENTAGE',
+    label: '% Porcentaje',
+    hint:  'Ej: 20% de descuento por unidad',
+  },
+  {
+    v:     'TWO_FOR_ONE',
+    label: '2 x 1',
+    hint:  'Llevá 2 y pagá 1',
+  },
+  {
+    v:     'SECOND_UNIT_50',
+    label: '2da unidad 50%',
+    hint:  '50% de descuento en la 2da unidad de cada par',
+  },
+];
 
 const formatARS = (v) =>
   v != null
@@ -75,6 +96,72 @@ const nowBsAsISO = (addHours = 0) => {
   return d.toISOString().slice(0, 19);
 };
 
+/**
+ * Devuelve la etiqueta del tipo de descuento extendido de una promo,
+ * considerando los tags [TYPE:...] en description para 2x1 y segunda unidad 50%.
+ */
+const resolveDiscountDisplay = (promotion) => {
+  const ext = extractExtendedType(promotion);
+  if (ext === 'TWO_FOR_ONE')    return { label: '2 x 1',         color: '#5500CC', bg: 'rgba(88,0,220,0.10)'  };
+  if (ext === 'SECOND_UNIT_50') return { label: '2da ud. al 50%', color: '#006080', bg: 'rgba(0,120,150,0.10)' };
+  if (promotion.discountType === 'PERCENTAGE' && promotion.discountPercentage) {
+    return { label: `−${promotion.discountPercentage}%`, color: '#C0392B', bg: 'rgba(192,57,43,0.10)' };
+  }
+  if (promotion.discountType === 'FIXED_PRICE' && promotion.promotionalPrice) {
+    return { label: formatARS(promotion.promotionalPrice), color: '#C0392B', bg: 'rgba(192,57,43,0.10)' };
+  }
+  return null;
+};
+
+/**
+ * Construye el payload para el backend al crear una promo.
+ * TWO_FOR_ONE y SECOND_UNIT_50 se codifican en description con un tag especial.
+ * El backend los recibe como PERCENTAGE (sin cambios en API).
+ */
+const buildCreatePayload = ({ suggestion, form, userId }) => {
+  const base = {
+    productId:         suggestion.productId,
+    batchId:           suggestion.batchId,
+    createdById:       userId ?? null,
+    title:             form.title.trim(),
+    description:       null,
+    startDate:         form.startDate,
+    endDate:           form.endDate,
+    suggestedBySystem: true,
+  };
+
+  if (form.discountType === 'TWO_FOR_ONE') {
+    // 50% es el equivalente promedio por unidad en un 2x1 (pagás 1, llevás 2)
+    // El tag en description es lo que el frontend usa para identificar el tipo real
+    return {
+      ...base,
+      discountType:       'PERCENTAGE',
+      discountPercentage: 50,
+      description: `${PROMO_TYPE_TAG.TWO_FOR_ONE}${form.description.trim() ? ' ' + form.description.trim() : ''}`,
+    };
+  }
+
+  if (form.discountType === 'SECOND_UNIT_50') {
+    // 25% es el descuento promedio por unidad cuando la 2da unidad sale al 50%
+    // El tag en description es lo que el frontend usa para identificar el tipo real
+    return {
+      ...base,
+      discountType:       'PERCENTAGE',
+      discountPercentage: 25,
+      description: `${PROMO_TYPE_TAG.SECOND_UNIT_50}${form.description.trim() ? ' ' + form.description.trim() : ''}`,
+    };
+  }
+
+  // PERCENTAGE estándar
+  return {
+    ...base,
+    discountType:       'PERCENTAGE',
+    discountPercentage: Number(form.discountPercentage),
+    promotionalPrice:   null,
+    description:        form.description.trim() || null,
+  };
+};
+
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const cfg = PROMOTION_STATUS_CONFIG[status] || PROMOTION_STATUS_CONFIG.EXPIRED;
@@ -91,32 +178,21 @@ function StatusBadge({ status }) {
 }
 
 // ─── DiscountChip ─────────────────────────────────────────────────────────────
+// Versión unificada: maneja los tipos extendidos 2x1 y SECOND_UNIT_50
+// además de PERCENTAGE y FIXED_PRICE originales.
 function DiscountChip({ promotion }) {
-  if (promotion.discountType === 'PERCENTAGE' && promotion.discountPercentage) {
-    return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center',
-        padding: '4px 12px', borderRadius: 20,
-        fontSize: '0.88rem', fontWeight: 800,
-        color: '#C0392B', background: 'rgba(192,57,43,0.10)',
-      }}>
-        −{promotion.discountPercentage}%
-      </span>
-    );
-  }
-  if (promotion.discountType === 'FIXED_PRICE' && promotion.promotionalPrice) {
-    return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center',
-        padding: '4px 12px', borderRadius: 20,
-        fontSize: '0.88rem', fontWeight: 800,
-        color: '#C0392B', background: 'rgba(192,57,43,0.10)',
-      }}>
-        {formatARS(promotion.promotionalPrice)}
-      </span>
-    );
-  }
-  return null;
+  const display = resolveDiscountDisplay(promotion);
+  if (!display) return null;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '4px 12px', borderRadius: 20,
+      fontSize: '0.88rem', fontWeight: 800,
+      color: display.color, background: display.bg,
+    }}>
+      {display.label}
+    </span>
+  );
 }
 
 // ─── SuggestionCard ──────────────────────────────────────────────────────────
@@ -268,13 +344,29 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlight
     : `Vence en ${promotion.daysToExpire}d`
     : null;
 
-  const discountedPrice = promotion.discountType === 'PERCENTAGE' && promotion.discountPercentage && promotion.originalPrice
-    ? calcDiscountedPrice(promotion.originalPrice, promotion.discountPercentage)
-    : promotion.promotionalPrice;
+  // Para PERCENTAGE estándar mostramos precio con descuento;
+  // para tipos extendidos no calculamos precio ya que depende de la cantidad.
+  const extType = extractExtendedType(promotion);
+  const discountedPrice = !extType && promotion.discountType === 'PERCENTAGE'
+    && promotion.discountPercentage && promotion.originalPrice
+      ? calcDiscountedPrice(promotion.originalPrice, promotion.discountPercentage)
+      : (!extType && promotion.promotionalPrice ? promotion.promotionalPrice : null);
 
-  const savingsAmount = promotion.originalPrice && discountedPrice
+  const savingsAmount = !extType && promotion.originalPrice && discountedPrice
     ? parseFloat(promotion.originalPrice) - parseFloat(discountedPrice)
     : null;
+
+  // Descripción limpia (sin los tags internos [TYPE:...])
+  const cleanDescription = promotion.description
+    ? promotion.description.replace(/\[TYPE:[^\]]+\]\s*/g, '').trim()
+    : null;
+
+  // Etiqueta del tipo de descuento en el detalle expandido
+  const discountTypeLabel = extType === 'TWO_FOR_ONE'
+    ? '2 x 1'
+    : extType === 'SECOND_UNIT_50'
+      ? '2da unidad al 50%'
+      : DISCOUNT_TYPE_LABELS[promotion.discountType] || promotion.discountType;
 
   return (
     <div
@@ -303,8 +395,10 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlight
           </div>
 
           <div className="pc-row2">
+            {/* DiscountChip ahora maneja 2x1 y SECOND_UNIT_50 */}
             <DiscountChip promotion={promotion} />
-            {promotion.originalPrice && discountedPrice && (
+            {/* Precio con descuento solo aplica a PERCENTAGE estándar */}
+            {!extType && promotion.originalPrice && discountedPrice && (
               <div className="pc-price-info">
                 <span className="pc-original-price">{formatARS(promotion.originalPrice)}</span>
                 <span className="pc-arrow">→</span>
@@ -313,6 +407,12 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlight
                   <span className="pc-savings">ahorras {formatARS(savingsAmount)}</span>
                 )}
               </div>
+            )}
+            {/* Para tipos extendidos mostramos aclaración */}
+            {extType && promotion.originalPrice && (
+              <span className="pc-ext-price-note">
+                Base: {formatARS(promotion.originalPrice)} · precio varía según cantidad
+              </span>
             )}
           </div>
 
@@ -336,26 +436,32 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlight
       {expanded && (
         <div className="pc-detail">
           <div className="pc-detail-grid">
-            {promotion.description && (
+            {cleanDescription && (
               <div className="pd-item full">
                 <span className="pd-label">Descripción</span>
-                <span>{promotion.description}</span>
+                <span>{cleanDescription}</span>
               </div>
             )}
             <div className="pd-item">
               <span className="pd-label">Tipo de descuento</span>
-              <span>{DISCOUNT_TYPE_LABELS[promotion.discountType] || promotion.discountType}</span>
+              <span>{discountTypeLabel}</span>
             </div>
-            {promotion.discountType === 'PERCENTAGE' && (
+            {!extType && promotion.discountType === 'PERCENTAGE' && (
               <div className="pd-item">
                 <span className="pd-label">Porcentaje</span>
                 <span style={{ fontWeight: 700, color: '#C0392B' }}>−{promotion.discountPercentage}%</span>
               </div>
             )}
-            {promotion.discountType === 'FIXED_PRICE' && (
+            {!extType && promotion.discountType === 'FIXED_PRICE' && (
               <div className="pd-item">
                 <span className="pd-label">Precio promocional</span>
                 <span style={{ fontWeight: 700, color: '#C0392B' }}>{formatARS(promotion.promotionalPrice)}</span>
+              </div>
+            )}
+            {extType === 'SECOND_UNIT_50' && promotion.originalPrice && (
+              <div className="pd-item">
+                <span className="pd-label">Precio base</span>
+                <span>{formatARS(promotion.originalPrice)}</span>
               </div>
             )}
             {promotion.batchId && (
@@ -441,6 +547,9 @@ function PromotionCard({ promotion, onCancel, cancelling, isOwnerUser, highlight
           font-size: 0.7rem; font-weight: 700; color: #2E7D32;
           background: rgba(46,125,50,0.09); padding: 2px 7px; border-radius: 10px;
         }
+        .pc-ext-price-note {
+          font-size: 0.75rem; color: var(--warm-gray); font-style: italic;
+        }
 
         .pc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.76rem; color: var(--warm-gray); }
         .pc-dates     { flex: 1; min-width: 0; }
@@ -497,7 +606,6 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
     discountPercentage: suggestion?.suggestedDiscountPercentage
                           ? String(suggestion.suggestedDiscountPercentage)
                           : '10',
-    promotionalPrice:   '',
     startDate: nowBsAsISO(0),
     endDate:   suggestion?.expirationDate
                  ? suggestion.expirationDate + 'T23:59:00'
@@ -521,11 +629,6 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
       if (!form.discountPercentage || isNaN(pct) || pct < 1 || pct > 100)
         e.discountPercentage = 'Ingresá un porcentaje entre 1 y 100';
     }
-    if (form.discountType === 'FIXED_PRICE') {
-      const price = Number(form.promotionalPrice);
-      if (!form.promotionalPrice || isNaN(price) || price <= 0)
-        e.promotionalPrice = 'Ingresá un precio mayor a cero';
-    }
     if (!form.startDate) e.startDate = 'La fecha de inicio es obligatoria';
     if (!form.endDate)   e.endDate   = 'La fecha de fin es obligatoria';
     if (form.startDate && form.endDate && form.endDate <= form.startDate)
@@ -542,25 +645,38 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
-
-    const payload = {
-      productId:          suggestion.productId,
-      batchId:            suggestion.batchId,
-      createdById:        user?.id ?? null,
-      title:              form.title.trim(),
-      description:        form.description.trim() || null,
-      discountType:       form.discountType,
-      discountPercentage: form.discountType === 'PERCENTAGE' ? Number(form.discountPercentage) : null,
-      promotionalPrice:   form.discountType === 'FIXED_PRICE' ? Number(form.promotionalPrice) : null,
-      startDate:          form.startDate,
-      endDate:            form.endDate,
-      suggestedBySystem:  true,
-    };
-
+    const payload = buildCreatePayload({ suggestion, form, userId: user?.id });
     dispatch(createPromotion({ token, data: payload }));
   };
 
   const isLoading = status === 'loading';
+
+  // Vista previa de precio según tipo de descuento
+  const pricePreview = useMemo(() => {
+    if (!suggestion?.originalPrice) return null;
+    const base = parseFloat(suggestion.originalPrice);
+    if (form.discountType === 'PERCENTAGE' && form.discountPercentage) {
+      const pct = parseFloat(form.discountPercentage);
+      if (isNaN(pct) || pct <= 0 || pct > 100) return null;
+      return {
+        label:  `${formatARS(base)} → ${formatARS(base * (1 - pct / 100))} por unidad`,
+        color:  '#C0392B',
+      };
+    }
+    if (form.discountType === 'TWO_FOR_ONE') {
+      return {
+        label: `2 unidades por ${formatARS(base)} (pagás 1, llevás 2)`,
+        color: '#5500CC',
+      };
+    }
+    if (form.discountType === 'SECOND_UNIT_50') {
+      return {
+        label: `2 unidades por ${formatARS(base * 1.5)} · precio promedio ${formatARS(base * 0.75)}/u.`,
+        color: '#006080',
+      };
+    }
+    return null;
+  }, [form.discountType, form.discountPercentage, suggestion?.originalPrice]);
 
   return (
     <form onSubmit={handleSubmit} noValidate className="cpf-form">
@@ -618,13 +734,11 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
         />
       </div>
 
+      {/* Tipo de descuento — ahora con 3 opciones */}
       <div className="cpf-field">
         <label className="cpf-label">Tipo de descuento *</label>
         <div className="cpf-type-grid">
-          {[
-            { v: 'PERCENTAGE',  label: '% Porcentaje', hint: 'Ej: 20% de descuento' },
-            { v: 'FIXED_PRICE', label: '$ Precio fijo', hint: 'Ej: $1.500 final' },
-          ].map((opt) => (
+          {DISCOUNT_TYPE_OPTIONS.map((opt) => (
             <label key={opt.v} className={`cpf-type-opt ${form.discountType === opt.v ? 'selected' : ''}`}>
               <input
                 type="radio"
@@ -643,6 +757,7 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
         {fieldErrors.discountType && <span className="cpf-err">{fieldErrors.discountType}</span>}
       </div>
 
+      {/* Campo de porcentaje solo para PERCENTAGE */}
       {form.discountType === 'PERCENTAGE' && (
         <div className="cpf-field">
           <label className="cpf-label">Porcentaje de descuento (%) *</label>
@@ -657,18 +772,11 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
           {fieldErrors.discountPercentage && <span className="cpf-err">{fieldErrors.discountPercentage}</span>}
         </div>
       )}
-      {form.discountType === 'FIXED_PRICE' && (
-        <div className="cpf-field">
-          <label className="cpf-label">Precio promocional ($) *</label>
-          <input
-            className={`cpf-input ${fieldErrors.promotionalPrice ? 'err' : ''}`}
-            type="number" min="1" step="0.01"
-            placeholder="Ej: 1500"
-            value={form.promotionalPrice}
-            onChange={handleChange('promotionalPrice')}
-            disabled={isLoading}
-          />
-          {fieldErrors.promotionalPrice && <span className="cpf-err">{fieldErrors.promotionalPrice}</span>}
+
+      {/* Vista previa del precio */}
+      {pricePreview && (
+        <div className="cpf-price-preview" style={{ color: pricePreview.color }}>
+          💡 {pricePreview.label}
         </div>
       )}
 
@@ -745,7 +853,9 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
           box-shadow: 0 0 0 3px rgba(200,137,58,0.12);
         }
         .cpf-input.err { border-color: var(--error); }
-        .cpf-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+        /* Grilla de tipos: 3 columnas en desktop, 1 en mobile */
+        .cpf-type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
         .cpf-type-opt {
           display: flex; flex-direction: column; gap: 3px;
           padding: 11px 13px; border-radius: var(--radius-md);
@@ -754,7 +864,15 @@ function CreatePromotionForm({ suggestion, onSuccess, onCancel }) {
         }
         .cpf-type-opt.selected { border-color: var(--amber); background: rgba(200,137,58,0.05); }
         .cpf-type-label { font-weight: 700; font-size: 0.88rem; color: var(--espresso); }
-        .cpf-type-hint  { font-size: 0.72rem; color: var(--warm-gray); }
+        .cpf-type-hint  { font-size: 0.7rem; color: var(--warm-gray); line-height: 1.35; }
+
+        .cpf-price-preview {
+          padding: 9px 13px; border-radius: var(--radius-md);
+          background: rgba(200,137,58,0.05); border: 1px solid rgba(200,137,58,0.18);
+          font-size: 0.82rem; font-weight: 600; line-height: 1.4;
+          animation: fadeIn 0.2s ease;
+        }
+
         .cpf-dates-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .cpf-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 8px; border-top: 1px solid var(--cream-dark); }
         .cpf-cancel {
@@ -799,14 +917,13 @@ export default function PromotionsPage() {
   const user        = useSelector(selectUser);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ── Usamos los selectores filtrados ──────────────────────────────────────
   const promotions        = useSelector(selectVisiblePromotions);
   const listStatus        = useSelector(selectPromotionsStatus);
   const listError         = useSelector(selectPromotionsError);
   const suggestions       = useSelector(selectPromotionSuggestions);
   const suggestionsStatus = useSelector(selectSuggestionsStatus);
   const suggestionsError  = useSelector(selectSuggestionsError);
-  const { status: actionStatus, error: actionError } = useSelector(selectPromotionAction);
+  const { status: actionStatus } = useSelector(selectPromotionAction);
 
   const ownerUser = isOwner(user);
 
@@ -821,11 +938,11 @@ export default function PromotionsPage() {
     return ownerUser ? 'suggestions' : 'active';
   };
 
-  const [activeTab,          setActiveTab]         = useState(resolveInitialTab);
-  const [modalSuggestion,    setModalSuggestion]   = useState(null);
-  const [confirmCancelItem,  setConfirmCancelItem] = useState(null);
-  const [search,             setSearch]            = useState('');
-  const [statusFilter,       setStatusFilter]      = useState('');
+  const [activeTab,         setActiveTab]        = useState(resolveInitialTab);
+  const [modalSuggestion,   setModalSuggestion]  = useState(null);
+  const [confirmCancelItem, setConfirmCancelItem] = useState(null);
+  const [search,            setSearch]           = useState('');
+  const [statusFilter,      setStatusFilter]     = useState('');
 
   const highlightedSuggestionRef = useRef(null);
   const highlightedPromoRef      = useRef(null);
@@ -841,9 +958,7 @@ export default function PromotionsPage() {
   useEffect(() => {
     if (qBatchId && suggestionsStatus === 'succeeded' && activeTab === 'suggestions') {
       const timer = setTimeout(() => {
-        highlightedSuggestionRef.current?.scrollIntoView({
-          behavior: 'smooth', block: 'center',
-        });
+        highlightedSuggestionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -852,9 +967,7 @@ export default function PromotionsPage() {
   useEffect(() => {
     if (qPromoId && listStatus === 'succeeded' && activeTab === 'active') {
       const timer = setTimeout(() => {
-        highlightedPromoRef.current?.scrollIntoView({
-          behavior: 'smooth', block: 'center',
-        });
+        highlightedPromoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -877,10 +990,10 @@ export default function PromotionsPage() {
       const q = search.trim().toLowerCase();
       list = list.filter(
         (p) =>
-          (p.title        || '').toLowerCase().includes(q) ||
-          (p.productName  || '').toLowerCase().includes(q) ||
-          (p.description  || '').toLowerCase().includes(q) ||
-          (p.createdByName|| '').toLowerCase().includes(q)
+          (p.title         || '').toLowerCase().includes(q) ||
+          (p.productName   || '').toLowerCase().includes(q) ||
+          (p.description   || '').toLowerCase().includes(q) ||
+          (p.createdByName || '').toLowerCase().includes(q)
       );
     }
     return list;
@@ -1357,6 +1470,9 @@ export default function PromotionsPage() {
         .promo-go-suggestions:hover { background: var(--amber-dark); transform: translateY(-1px); }
 
         .promo-count { text-align: right; font-size: 0.75rem; color: var(--warm-gray-light); }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
         @media (max-width: 480px) {
           .promo-content { padding: var(--space-md) var(--space-sm); }
