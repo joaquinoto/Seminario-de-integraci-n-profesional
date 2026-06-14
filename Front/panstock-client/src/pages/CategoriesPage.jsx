@@ -39,16 +39,13 @@ export default function CategoriesPage() {
   const [search,    setSearch]    = useState('');
   const [showAll,   setShowAll]   = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing,   setEditing]   = useState(null);   // null = create, object = edit
-  const [confirmId, setConfirmId] = useState(null);   // id to deactivate
+  const [editing,   setEditing]   = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
 
-  // ── Initial fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
-    // Fetch all (including inactive) so the "Ver inactivas" toggle works client-side
     dispatch(fetchCategories({ token, activeOnly: false }));
   }, [dispatch, token]);
 
-  // ── Client-side filter ─────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = showAll ? items : items.filter((c) => c.active);
     if (search.trim()) {
@@ -62,30 +59,17 @@ export default function CategoriesPage() {
     return list;
   }, [items, search, showAll]);
 
-  // ── Modal handlers ──────────────────────────────────────────────────────────
-  const openCreate = () => {
-    setEditing(null);
-    setModalOpen(true);
-  };
-
-  const openEdit = (cat) => {
-    setEditing(cat);
-    setModalOpen(true);
-  };
-
+  const openCreate = () => { setEditing(null); setModalOpen(true); };
+  const openEdit   = (cat) => { setEditing(cat); setModalOpen(true); };
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
     dispatch(clearCategoryActionState());
   };
-
   const handleFormSuccess = () => {
     closeModal();
-    // Re-fetch to get fresh server state
     dispatch(fetchCategories({ token, activeOnly: false }));
   };
-
-  // ── Deactivate handlers ────────────────────────────────────────────────────
   const handleDeleteConfirm = () => {
     if (!confirmId) return;
     dispatch(deleteCategory({ token, id: confirmId })).then(() => {
@@ -96,8 +80,7 @@ export default function CategoriesPage() {
 
   const confirmTarget = items.find((c) => c.id === confirmId);
   const deleting      = actStatus === 'loading' && confirmId !== null;
-
-  const activeCount = items.filter((c) => c.active).length;
+  const activeCount   = items.filter((c) => c.active).length;
 
   return (
     <div className="cats-page">
@@ -108,7 +91,6 @@ export default function CategoriesPage() {
           title="Categorías"
           subtitle={`${activeCount} categoría${activeCount !== 1 ? 's' : ''} activa${activeCount !== 1 ? 's' : ''}`}
           action={
-            /* Only OWNER sees the create button */
             isOwner(user) && (
               <PrimaryBtn onClick={openCreate}>+ Nueva categoría</PrimaryBtn>
             )
@@ -140,15 +122,12 @@ export default function CategoriesPage() {
           </label>
         </FilterBar>
 
-        {/* ── Fetch error ── */}
         {fetchErr && (
           <div className="cats-error">⚠ {fetchErr}</div>
         )}
 
-        {/* ── Loading ── */}
         {status === 'loading' && <TableSkeleton rows={6} />}
 
-        {/* ── Empty state ── */}
         {status === 'succeeded' && filtered.length === 0 && (
           <EmptyState
             icon="🗂"
@@ -168,7 +147,6 @@ export default function CategoriesPage() {
           />
         )}
 
-        {/* ── List ── */}
         {status === 'succeeded' && filtered.length > 0 && (
           <div className="cats-list">
             {filtered.map((cat, i) => (
@@ -194,11 +172,6 @@ export default function CategoriesPage() {
                 {/* Right: status badge + actions */}
                 <div className="cat-row-meta">
                   <StatusBadge active={cat.active} />
-
-                  {/*
-                   * OWNER: edit + deactivate buttons
-                   * EMPLOYEE: read-only, no action buttons shown
-                   */}
                   {isOwner(user) && (
                     <div className="cat-actions">
                       <ActionBtn
@@ -220,7 +193,6 @@ export default function CategoriesPage() {
           </div>
         )}
 
-        {/* ── Count ── */}
         {status === 'succeeded' && filtered.length > 0 && (
           <p className="cats-count">
             {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
@@ -228,7 +200,6 @@ export default function CategoriesPage() {
         )}
       </div>
 
-      {/* ── Create / Edit Modal — OWNER only ── */}
       {isOwner(user) && (
         <Modal
           isOpen={modalOpen}
@@ -244,7 +215,6 @@ export default function CategoriesPage() {
         </Modal>
       )}
 
-      {/* ── Deactivate confirm — OWNER only ── */}
       {isOwner(user) && (
         <ConfirmDialog
           isOpen={Boolean(confirmId)}
@@ -292,7 +262,6 @@ export default function CategoriesPage() {
         }
         .cats-toggle-all input { accent-color: var(--amber); }
 
-        /* Error banner */
         .cats-error {
           padding: 12px 16px; background: var(--error-light);
           border: 1px solid var(--error); border-radius: var(--radius-md);
@@ -304,27 +273,46 @@ export default function CategoriesPage() {
 
         .cat-row {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 16px; padding: 16px 18px;
+          gap: 12px; padding: 14px 16px;
           background: white; border-radius: var(--radius-lg);
           border: 1px solid var(--cream-dark); box-shadow: var(--shadow-sm);
           animation: fadeIn 0.3s ease both;
           transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+          /* ⚠️ overflow:hidden contiene cualquier texto que desborde */
+          overflow: hidden;
         }
-        .cat-row:hover   { box-shadow: var(--shadow-md); border-color: rgba(200,137,58,0.25); }
+        .cat-row:hover    { box-shadow: var(--shadow-md); border-color: rgba(200,137,58,0.25); }
         .cat-row.inactive { opacity: 0.55; }
 
         .cat-row-main {
-          display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0;
+          display: flex; align-items: center; gap: 12px;
+          /* ⚠️ flex:1 + min-width:0 permite que el texto se encoja */
+          flex: 1; min-width: 0;
         }
         .cat-color-chip { width: 10px; height: 36px; border-radius: 5px; flex-shrink: 0; }
-        .cat-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-        .cat-name { font-weight: 700; font-size: 0.95rem; color: var(--espresso); }
+
+        /* ⚠️ cat-info: min-width:0 es CRÍTICO — sin esto el texto desborda el flex */
+        .cat-info {
+          display: flex; flex-direction: column; gap: 2px;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .cat-name {
+          font-weight: 700; font-size: 0.95rem; color: var(--espresso);
+          word-break: break-word;
+        }
         .cat-desc {
           font-size: 0.78rem; color: var(--warm-gray);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;
+          /* Mobile: truncar en 2 líneas — NO usar nowrap */
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          word-break: break-word;
+          overflow-wrap: break-word;
         }
 
-        .cat-row-meta { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .cat-row-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .cat-actions  { display: flex; gap: 6px; }
 
         .cats-count {
@@ -332,9 +320,23 @@ export default function CategoriesPage() {
           color: var(--warm-gray-light); margin-top: 12px;
         }
 
+        /* Mobile: apilar meta debajo de info */
         @media (max-width: 540px) {
-          .cat-row { flex-direction: column; align-items: flex-start; }
+          .cats-content { padding: var(--space-lg) var(--space-sm); }
+          .cat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
           .cat-row-meta { width: 100%; justify-content: space-between; }
+        }
+
+        /* Desktop: desc en 1 línea con ellipsis (comportamiento original) */
+        @media (min-width: 541px) {
+          .cat-desc {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 380px;
+            -webkit-line-clamp: unset;
+          }
         }
       `}</style>
     </div>

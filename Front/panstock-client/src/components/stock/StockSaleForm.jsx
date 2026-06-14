@@ -7,7 +7,11 @@ import {
 } from '../../features/stock/stockSlice';
 import { selectToken, selectUser } from '../../features/auth/authSlice';
 import { selectProducts, fetchProducts } from '../../features/catalog/productsSlice';
-import { selectPromotions } from '../../features/promotions/promotionsSlice';
+import {
+  selectPromotions,
+  extractExtendedType,
+  calcEffectivePriceForSale,
+} from '../../features/promotions/promotionsSlice';
 import { Alert } from '../ui/FormField';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -30,6 +34,14 @@ const formatARS = (v) =>
       }).format(v)
     : null;
 
+// ─── Colores por tipo de promo ────────────────────────────────────────────────
+const PROMO_STYLES = {
+  TWO_FOR_ONE:     { bg: 'rgba(88,0,220,0.07)',  border: 'rgba(88,0,220,0.35)',  text: '#5500CC', badge: '#5500CC', label: '2x1' },
+  SECOND_UNIT_50:  { bg: 'rgba(0,120,150,0.07)', border: 'rgba(0,120,150,0.35)', text: '#006080', badge: '#006080', label: '2da unidad 50%' },
+  PERCENTAGE:      { bg: 'rgba(192,57,43,0.05)', border: 'rgba(192,57,43,0.30)', text: '#C0392B', badge: '#C0392B', label: 'Descuento' },
+  FIXED_PRICE:     { bg: 'rgba(46,125,50,0.05)', border: 'rgba(46,125,50,0.25)', text: '#2E7D32', badge: '#2E7D32', label: 'Precio fijo' },
+};
+
 // ─── Field wrapper ────────────────────────────────────────────────────────────
 function Field({ label, error, hint, children, required }) {
   return (
@@ -47,12 +59,11 @@ function Field({ label, error, hint, children, required }) {
   );
 }
 
-// ─── Success Screen ────────────────────────────────────────────────────────────
-function SuccessView({ result, appliedPromo, onNew, onClose }) {
+// ─── SuccessView ──────────────────────────────────────────────────────────────
+function SuccessView({ result, promoInfo, onNew, onClose }) {
   const productName = result?.productName || 'Producto';
   const totalQty    = result?.totalQuantity ?? '?';
   const movements   = result?.movements ?? [];
-  const lots        = movements.length;
 
   return (
     <div className="sf-success">
@@ -61,18 +72,26 @@ function SuccessView({ result, appliedPromo, onNew, onClose }) {
       <p className="sf-success-desc">
         Se registró la venta de <strong>{totalQty}</strong> unidades de{' '}
         <strong>{productName}</strong>
-        {lots > 1 && <>, descontando de <strong>{lots} lotes</strong> (FEFO)</>}.
+        {movements.length > 1 && <>, descontando de <strong>{movements.length} lotes</strong> (FEFO)</>}.
       </p>
 
-      {/* Indicar si se aplicó precio promocional */}
-      {appliedPromo && (
+      {promoInfo && (
         <div className="sf-promo-applied">
-          🏷️ Precio de promoción aplicado:{' '}
-          <strong style={{ color: '#C0392B' }}>
-            {appliedPromo.discountType === 'PERCENTAGE'
-              ? `−${appliedPromo.discountPercentage}%`
-              : formatARS(appliedPromo.promotionalPrice)}
+          🏷️ Precio registrado con promo activa:{' '}
+          <strong style={{ color: promoInfo.style.text }}>
+            {promoInfo.displayLabel}
           </strong>
+          {promoInfo.detail && (
+            <span style={{ color: 'var(--warm-gray)', fontWeight: 400 }}>
+              {' '}· {promoInfo.detail}
+            </span>
+          )}
+        </div>
+      )}
+
+      {!promoInfo && (
+        <div className="sf-no-promo-applied">
+          💲 Precio sin promoción registrado correctamente.
         </div>
       )}
 
@@ -82,6 +101,9 @@ function SuccessView({ result, appliedPromo, onNew, onClose }) {
             <div key={m.id} className="sf-movement-row">
               <span className="sf-movement-badge">Lote #{m.batchId}</span>
               <span className="sf-movement-qty">−{m.quantity} u.</span>
+              {m.unitSalePrice != null && (
+                <span className="sf-movement-price">{formatARS(m.unitSalePrice)}/u.</span>
+              )}
             </div>
           ))}
         </div>
@@ -112,6 +134,11 @@ function SuccessView({ result, appliedPromo, onNew, onClose }) {
           background: rgba(214,137,16,0.08); border: 1px solid rgba(214,137,16,0.3);
           font-size: 0.84rem; color: var(--warm-gray);
         }
+        .sf-no-promo-applied {
+          padding: 8px 16px; border-radius: var(--radius-md);
+          background: rgba(46,125,50,0.07); border: 1px solid rgba(46,125,50,0.2);
+          font-size: 0.84rem; color: #2E7D32; font-weight: 500;
+        }
         .sf-success-movements {
           display: flex; flex-wrap: wrap; gap: 7px;
           justify-content: center; max-width: 360px;
@@ -123,7 +150,7 @@ function SuccessView({ result, appliedPromo, onNew, onClose }) {
         }
         .sf-movement-badge { font-size: 0.74rem; font-weight: 700; color: #2E7D32; }
         .sf-movement-qty   { font-size: 0.74rem; color: var(--warm-gray); }
-
+        .sf-movement-price { font-size: 0.72rem; color: var(--espresso); font-weight: 600; }
         .sf-success-actions {
           display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
           padding-top: 8px;
@@ -147,15 +174,168 @@ function SuccessView({ result, appliedPromo, onNew, onClose }) {
   );
 }
 
+// ─── PromoBanner ──────────────────────────────────────────────────────────────
+// Muestra la promo activa y calcula en tiempo real el precio según cantidad.
+function PromoBanner({ promotion, originalPrice, quantity }) {
+  const extType = extractExtendedType(promotion);
+  const style   = PROMO_STYLES[extType || promotion?.discountType] || PROMO_STYLES.PERCENTAGE;
+  const qty     = parseFloat(quantity) || 1;
+
+  const effective = calcEffectivePriceForSale(promotion, originalPrice, qty);
+
+  // Etiqueta del tipo de promo
+  const promoTypeLabel = extType === 'TWO_FOR_ONE'
+    ? '2 x 1'
+    : extType === 'SECOND_UNIT_50'
+      ? '2da unidad al 50%'
+      : promotion?.discountType === 'PERCENTAGE'
+        ? `−${promotion.discountPercentage}%`
+        : 'Precio fijo';
+
+  return (
+    <div className="pb-banner" style={{ '--pb-bg': style.bg, '--pb-border': style.border, '--pb-text': style.text }}>
+      {/* Cabecera */}
+      <div className="pb-header">
+        <span className="pb-badge" style={{ background: style.badge }}>
+          🏷️ PROMO ACTIVA
+        </span>
+        <span className="pb-title">{promotion.title}</span>
+        <span className="pb-type-chip" style={{ color: style.text, background: style.bg, border: `1px solid ${style.border}` }}>
+          {promoTypeLabel}
+        </span>
+      </div>
+
+      {/* Precios */}
+      {effective && originalPrice && (
+        <div className="pb-prices">
+          <div className="pb-price-row">
+            <span className="pb-price-label">Precio normal:</span>
+            <span className="pb-price-original">{formatARS(originalPrice)}</span>
+          </div>
+          <div className="pb-price-row pb-price-row--main">
+            <span className="pb-price-label">Precio unit. efectivo:</span>
+            <span className="pb-price-effective" style={{ color: style.text }}>
+              {formatARS(effective.unitPrice)}
+            </span>
+          </div>
+          {effective.detail && (
+            <p className="pb-detail">{effective.detail}</p>
+          )}
+        </div>
+      )}
+
+      {/* Subtotal en tiempo real (solo si hay cantidad válida y > 1) */}
+      {effective && qty >= 1 && (
+        <div className="pb-subtotal">
+          <span className="pb-subtotal-label">
+            Subtotal ({qty} u.):
+          </span>
+          <span className="pb-subtotal-value" style={{ color: style.text }}>
+            {formatARS(effective.totalPrice)}
+          </span>
+          {originalPrice && (
+            <span className="pb-subtotal-saving">
+              ahorras {formatARS(originalPrice * qty - effective.totalPrice)}
+            </span>
+          )}
+        </div>
+      )}
+
+      <p className="pb-note">
+        El precio efectivo por unidad se registrará en el historial de esta venta.
+      </p>
+
+      <style>{`
+        .pb-banner {
+          display: flex; flex-direction: column; gap: 10px;
+          padding: 13px 14px; border-radius: var(--radius-md);
+          background: var(--pb-bg); border: 1.5px solid var(--pb-border);
+          animation: fadeIn 0.25s ease;
+        }
+        .pb-header {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .pb-badge {
+          display: inline-flex; align-items: center;
+          padding: 2px 8px; border-radius: 4px;
+          font-size: 0.64rem; font-weight: 800; color: white;
+          letter-spacing: 0.05em; flex-shrink: 0;
+        }
+        .pb-title {
+          font-size: 0.86rem; font-weight: 700; color: var(--espresso); flex: 1; min-width: 0;
+        }
+        .pb-type-chip {
+          display: inline-flex; align-items: center;
+          padding: 3px 10px; border-radius: 20px;
+          font-size: 0.76rem; font-weight: 800; flex-shrink: 0; white-space: nowrap;
+        }
+        .pb-prices {
+          display: flex; flex-direction: column; gap: 4px;
+          padding: 8px 10px; border-radius: var(--radius-sm);
+          background: rgba(255,255,255,0.7);
+        }
+        .pb-price-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .pb-price-row--main { font-size: 1.02rem; }
+        .pb-price-label { font-size: 0.76rem; color: var(--warm-gray); }
+        .pb-price-original { font-size: 0.82rem; text-decoration: line-through; color: var(--warm-gray); }
+        .pb-price-effective { font-weight: 800; font-size: 1.05rem; }
+        .pb-detail { font-size: 0.73rem; color: var(--warm-gray); margin-top: 2px; font-style: italic; }
+
+        .pb-subtotal {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+          padding: 8px 10px; border-radius: var(--radius-sm);
+          background: rgba(255,255,255,0.85); border-top: 1px solid var(--pb-border);
+        }
+        .pb-subtotal-label { font-size: 0.78rem; color: var(--warm-gray); font-weight: 500; }
+        .pb-subtotal-value { font-family: var(--font-display); font-size: 1.15rem; font-weight: 800; flex: 1; }
+        .pb-subtotal-saving {
+          font-size: 0.72rem; font-weight: 700; color: #2E7D32;
+          background: rgba(46,125,50,0.09); padding: 2px 8px; border-radius: 10px;
+          white-space: nowrap;
+        }
+        .pb-note {
+          font-size: 0.72rem; color: var(--warm-gray); line-height: 1.4; margin: 0;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── NoPriceBanner (cuando hay precio normal sin promo) ───────────────────────
+function NoPriceBanner({ originalPrice, quantity }) {
+  const qty = parseFloat(quantity) || 1;
+  if (!originalPrice) return null;
+  return (
+    <div className="np-banner">
+      <div className="np-row">
+        <span className="np-label">💲 Precio sin promoción:</span>
+        <span className="np-value">{formatARS(originalPrice)}</span>
+      </div>
+      {qty > 1 && (
+        <div className="np-subtotal">
+          <span className="np-sub-label">Subtotal ({qty} u.):</span>
+          <span className="np-sub-val">{formatARS(originalPrice * qty)}</span>
+        </div>
+      )}
+      <style>{`
+        .np-banner {
+          display: flex; flex-direction: column; gap: 6px;
+          padding: 10px 13px; border-radius: var(--radius-md);
+          background: rgba(46,125,50,0.05); border: 1px solid rgba(46,125,50,0.2);
+          animation: fadeIn 0.2s ease;
+        }
+        .np-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .np-label { font-size: 0.82rem; color: var(--warm-gray); font-weight: 500; }
+        .np-value { font-weight: 700; font-size: 1rem; color: #2E7D32; }
+        .np-subtotal { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; border-top: 1px solid rgba(46,125,50,0.15); }
+        .np-sub-label { font-size: 0.76rem; color: var(--warm-gray); }
+        .np-sub-val   { font-family: var(--font-display); font-size: 1rem; font-weight: 800; color: var(--espresso); }
+      `}</style>
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
-/**
- * StockSaleForm
- *
- * Si hay una promo activa para el producto seleccionado:
- *   - Muestra un banner con el precio promocional
- *   - Incluye el precio de promo en las notas del movimiento
- *   - El backend descuenta stock normalmente (FEFO), el precio queda en notas
- */
 export default function StockSaleForm({ onSuccess, onCancel, initialProductId }) {
   const dispatch             = useDispatch();
   const token                = useSelector(selectToken);
@@ -164,10 +344,10 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
   const allPromotions        = useSelector(selectPromotions);
   const { status, error, lastResult } = useSelector(selectSaleAction);
 
-  const [form, setForm]           = useState(() => buildEmpty(initialProductId));
-  const [fieldErrors, setFE]      = useState({});
+  const [form, setForm]             = useState(() => buildEmpty(initialProductId));
+  const [fieldErrors, setFE]        = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
-  const [appliedPromo, setAppliedPromo] = useState(null);
+  const [appliedPromoInfo, setAppliedPromoInfo] = useState(null);
 
   // Load active products if needed
   useEffect(() => {
@@ -181,17 +361,14 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     setForm(buildEmpty(initialProductId));
     setFE({});
     setShowSuccess(false);
-    setAppliedPromo(null);
+    setAppliedPromoInfo(null);
     dispatch(clearSaleState());
   }, [initialProductId]); // eslint-disable-line
 
   useEffect(() => {
-    if (status === 'succeeded') {
-      setShowSuccess(true);
-    }
+    if (status === 'succeeded') setShowSuccess(true);
   }, [status]);
 
-  // Active products only
   const activeProducts = useMemo(
     () => products.filter((p) => p.active),
     [products]
@@ -206,7 +383,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     ? (UNIT_LABELS[selectedProduct.unitType] || selectedProduct.unitType)
     : '';
 
-  // ── Buscar promo activa para el producto seleccionado ─────────────────────
+  // Promo activa para el producto seleccionado
   const activePromoForProduct = useMemo(() => {
     if (!form.productId || !allPromotions?.length) return null;
     const pid = Number(form.productId);
@@ -215,46 +392,24 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     ) || null;
   }, [form.productId, allPromotions]);
 
-  // ── Calcular precio efectivo de venta ─────────────────────────────────────
-  const effectivePrice = useMemo(() => {
+  // Precio base del producto/promo
+  const originalPrice = useMemo(() => {
     if (!selectedProduct) return null;
-
-    if (activePromoForProduct) {
-      if (activePromoForProduct.discountType === 'FIXED_PRICE' && activePromoForProduct.promotionalPrice) {
-        return {
-          price: Number(activePromoForProduct.promotionalPrice),
-          isPromo: true,
-          promoInfo: activePromoForProduct,
-          originalPrice: selectedProduct.salePrice,
-        };
-      }
-      if (activePromoForProduct.discountType === 'PERCENTAGE' && activePromoForProduct.discountPercentage) {
-        const orig = selectedProduct.salePrice ?? activePromoForProduct.originalPrice;
-        if (orig) {
-          const discounted = Number(orig) * (1 - Number(activePromoForProduct.discountPercentage) / 100);
-          return {
-            price: discounted,
-            isPromo: true,
-            promoInfo: activePromoForProduct,
-            originalPrice: orig,
-          };
-        }
-      }
-    }
-
-    // Sin promo o no se pudo calcular
-    if (selectedProduct.salePrice != null && selectedProduct.salePrice !== 0) {
-      return {
-        price: Number(selectedProduct.salePrice),
-        isPromo: false,
-        promoInfo: null,
-        originalPrice: null,
-      };
-    }
+    if (activePromoForProduct?.originalPrice) return parseFloat(activePromoForProduct.originalPrice);
+    if (selectedProduct.salePrice) return parseFloat(selectedProduct.salePrice);
     return null;
   }, [selectedProduct, activePromoForProduct]);
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  // Precio unitario efectivo calculado (según promo y cantidad)
+  const effectivePriceInfo = useMemo(() => {
+    const qty = parseFloat(form.quantity) || 1;
+    if (activePromoForProduct && originalPrice) {
+      return calcEffectivePriceForSale(activePromoForProduct, originalPrice, qty);
+    }
+    return null;
+  }, [activePromoForProduct, originalPrice, form.quantity]);
+
+  // ── Validación ────────────────────────────────────────────────────────────
   const validate = () => {
     const e = {};
     if (!form.productId)
@@ -269,21 +424,26 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     if (fieldErrors[field]) setFE((p) => ({ ...p, [field]: undefined }));
   };
 
-  // Construir nota con info de precio
-  const buildNotes = () => {
+  // Construir nota con info del precio real aplicado
+  const buildNotes = (unitSalePrice) => {
     const parts = [];
     if (form.notes.trim()) parts.push(form.notes.trim());
 
-    if (effectivePrice?.isPromo && effectivePrice.promoInfo) {
-      const promo = effectivePrice.promoInfo;
-      const priceStr = formatARS(effectivePrice.price) || `$${effectivePrice.price}`;
-      const origStr  = effectivePrice.originalPrice ? formatARS(effectivePrice.originalPrice) : null;
-      const promoDesc = promo.discountType === 'PERCENTAGE'
-        ? `Promo: -${promo.discountPercentage}% → ${priceStr}${origStr ? ` (orig. ${origStr})` : ''}`
-        : `Promo precio fijo: ${priceStr}${origStr ? ` (orig. ${origStr})` : ''}`;
+    if (activePromoForProduct && effectivePriceInfo) {
+      const extType = extractExtendedType(activePromoForProduct);
+      let promoDesc = '';
+      if (extType === 'TWO_FOR_ONE') {
+        promoDesc = `Promo 2x1 → precio unit. efectivo: ${formatARS(effectivePriceInfo.unitPrice)} (${effectivePriceInfo.detail})`;
+      } else if (extType === 'SECOND_UNIT_50') {
+        promoDesc = `Promo 2da unidad al 50% → precio unit. efectivo: ${formatARS(effectivePriceInfo.unitPrice)} (${effectivePriceInfo.detail})`;
+      } else if (activePromoForProduct.discountType === 'PERCENTAGE') {
+        promoDesc = `Promo -${activePromoForProduct.discountPercentage}% → precio unit.: ${formatARS(unitSalePrice)}`;
+      } else {
+        promoDesc = `Promo precio fijo → ${formatARS(unitSalePrice)}/u.`;
+      }
       parts.push(promoDesc);
-    } else if (effectivePrice && !effectivePrice.isPromo) {
-      parts.push(`Precio: ${formatARS(effectivePrice.price)}`);
+    } else if (originalPrice && !activePromoForProduct) {
+      parts.push(`Precio sin promo: ${formatARS(originalPrice)}/u.`);
     }
 
     return parts.length > 0 ? parts.join(' | ') : null;
@@ -294,18 +454,32 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     const errs = validate();
     if (Object.keys(errs).length) { setFE(errs); return; }
 
-    // Guardar la promo que se aplicó para mostrarla en el success screen
-    if (effectivePrice?.isPromo) {
-      setAppliedPromo(effectivePrice.promoInfo);
-    } else {
-      setAppliedPromo(null);
+    const qty = parseFloat(form.quantity);
+
+    // Calcular el unitSalePrice real a registrar
+    let unitSalePrice = null;
+
+    if (activePromoForProduct && originalPrice) {
+      const info = calcEffectivePriceForSale(activePromoForProduct, originalPrice, qty);
+      if (info) {
+        unitSalePrice = info.unitPrice;
+        setAppliedPromoInfo({
+          ...info,
+          style: PROMO_STYLES[extractExtendedType(activePromoForProduct) || activePromoForProduct.discountType] || PROMO_STYLES.PERCENTAGE,
+        });
+      }
+    } else if (originalPrice) {
+      // Sin promo: precio normal
+      unitSalePrice = originalPrice;
+      setAppliedPromoInfo(null);
     }
 
     const payload = {
-      productId: Number(form.productId),
-      userId:    user?.id ?? null,
-      quantity:  Number(form.quantity),
-      notes:     buildNotes(),
+      productId:    Number(form.productId),
+      userId:       user?.id ?? null,
+      quantity:     qty,
+      unitSalePrice: unitSalePrice,           // ← precio real del momento
+      notes:        buildNotes(unitSalePrice),
     };
 
     dispatch(registerSale({ token, data: payload }));
@@ -315,7 +489,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
     setForm(buildEmpty(initialProductId));
     setFE({});
     setShowSuccess(false);
-    setAppliedPromo(null);
+    setAppliedPromoInfo(null);
     dispatch(clearSaleState());
   };
 
@@ -328,8 +502,17 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
 
   // ── Success screen ─────────────────────────────────────────────────────────
   if (showSuccess) {
-    return <SuccessView result={lastResult} appliedPromo={appliedPromo} onNew={handleNew} onClose={handleClose} />;
+    return (
+      <SuccessView
+        result={lastResult}
+        promoInfo={appliedPromoInfo}
+        onNew={handleNew}
+        onClose={handleClose}
+      />
+    );
   }
+
+  const qtyNum = parseFloat(form.quantity) || 0;
 
   return (
     <form onSubmit={handleSubmit} noValidate className="sale-form">
@@ -340,7 +523,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         <span className="sale-fefo-icon">ℹ️</span>
         <p className="sale-fefo-text">
           El stock se descuenta automáticamente comenzando por los lotes más próximos a vencer
-          <strong> (FEFO)</strong>. No se venden lotes vencidos.
+          <strong> (FEFO)</strong>. El precio real del momento queda registrado en el historial.
         </p>
       </div>
 
@@ -376,42 +559,7 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         </div>
       )}
 
-      {/* ── Banner de precio (promo activa o precio regular) ── */}
-      {effectivePrice && (
-        <div className={`sale-price-banner ${effectivePrice.isPromo ? 'promo' : 'regular'}`}>
-          {effectivePrice.isPromo ? (
-            <>
-              <div className="spb-header">
-                <span className="spb-promo-icon">🏷️</span>
-                <span className="spb-promo-label">¡Promoción activa!</span>
-                <span className="spb-promo-title">{effectivePrice.promoInfo.title}</span>
-              </div>
-              <div className="spb-prices">
-                {effectivePrice.originalPrice && (
-                  <span className="spb-original">{formatARS(effectivePrice.originalPrice)}</span>
-                )}
-                <span className="spb-arrow">→</span>
-                <span className="spb-promo-price">{formatARS(effectivePrice.price)}</span>
-                {effectivePrice.promoInfo.discountType === 'PERCENTAGE' && (
-                  <span className="spb-discount-badge">
-                    −{effectivePrice.promoInfo.discountPercentage}%
-                  </span>
-                )}
-              </div>
-              <p className="spb-note">
-                Este precio quedará registrado en las notas del movimiento.
-              </p>
-            </>
-          ) : (
-            <div className="spb-regular">
-              <span className="spb-regular-label">💲 Precio de venta:</span>
-              <span className="spb-regular-price">{formatARS(effectivePrice.price)} / {unitLabel}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Quantity ── */}
+      {/* ── Cantidad ── */}
       <Field
         label={`Cantidad${unitLabel ? ` (${unitLabel})` : ''}`}
         required
@@ -431,17 +579,25 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         />
       </Field>
 
-      {/* ── Subtotal estimado ── */}
-      {effectivePrice && form.quantity && !isNaN(Number(form.quantity)) && Number(form.quantity) > 0 && (
-        <div className="sale-subtotal">
-          <span className="sale-subtotal-label">Subtotal estimado:</span>
-          <span className="sale-subtotal-value" style={{ color: effectivePrice.isPromo ? '#C0392B' : 'var(--espresso)' }}>
-            {formatARS(effectivePrice.price * Number(form.quantity))}
-          </span>
-        </div>
+      {/* ── Banner de precio ── */}
+      {selectedProduct && (
+        <>
+          {activePromoForProduct ? (
+            <PromoBanner
+              promotion={activePromoForProduct}
+              originalPrice={originalPrice}
+              quantity={qtyNum || 1}
+            />
+          ) : (
+            <NoPriceBanner
+              originalPrice={originalPrice}
+              quantity={qtyNum || 1}
+            />
+          )}
+        </>
       )}
 
-      {/* ── Notes ── */}
+      {/* ── Observaciones ── */}
       <Field label="Observaciones adicionales">
         <textarea
           className="sale-textarea"
@@ -479,7 +635,6 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
       <style>{`
         .sale-form { display: flex; flex-direction: column; gap: 16px; }
 
-        /* FEFO hint */
         .sale-fefo-hint {
           display: flex; gap: 10px; align-items: flex-start;
           padding: 12px 14px; border-radius: var(--radius-md);
@@ -492,7 +647,6 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
           line-height: 1.5; margin: 0;
         }
 
-        /* Field */
         .sf-field { display: flex; flex-direction: column; gap: 5px; }
         .sf-label {
           font-family: var(--font-body); font-size: 0.76rem; font-weight: 600;
@@ -502,7 +656,6 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         .sf-hint  { font-size: 0.74rem; color: var(--warm-gray-light); line-height: 1.4; }
         .sf-error { font-size: 0.76rem; color: var(--error); font-weight: 600; }
 
-        /* Inputs */
         .sale-select, .sale-input, .sale-textarea {
           width: 100%; padding: 12px 14px;
           font-family: var(--font-body); font-size: 0.92rem;
@@ -523,7 +676,6 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
           opacity: 0.6; cursor: not-allowed;
         }
 
-        /* Product hint chips */
         .sale-product-hint {
           display: flex; flex-wrap: wrap; gap: 6px;
           margin-top: -8px;
@@ -536,75 +688,6 @@ export default function StockSaleForm({ onSuccess, onCancel, initialProductId })
         .sale-product-chip.origin { background: rgba(200,137,58,0.10); color: var(--amber-dark); }
         .sale-product-chip.unit   { background: var(--cream-dark); color: var(--warm-gray); }
 
-        /* ── Banner de precio ── */
-        .sale-price-banner {
-          border-radius: var(--radius-md); padding: 12px 14px;
-          display: flex; flex-direction: column; gap: 8px;
-          animation: fadeIn 0.25s ease;
-        }
-        .sale-price-banner.promo {
-          background: rgba(192,57,43,0.05);
-          border: 1.5px solid rgba(192,57,43,0.3);
-        }
-        .sale-price-banner.regular {
-          background: rgba(46,125,50,0.05);
-          border: 1px solid rgba(46,125,50,0.2);
-        }
-
-        .spb-header {
-          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-        }
-        .spb-promo-icon  { font-size: 1rem; flex-shrink: 0; }
-        .spb-promo-label {
-          font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
-          letter-spacing: 0.06em; color: #C0392B;
-        }
-        .spb-promo-title {
-          font-size: 0.82rem; font-weight: 600; color: var(--espresso);
-          background: rgba(192,57,43,0.08); padding: 2px 9px;
-          border-radius: 12px;
-        }
-
-        .spb-prices {
-          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-        }
-        .spb-original {
-          text-decoration: line-through; font-size: 0.86rem;
-          color: var(--warm-gray); font-weight: 500;
-        }
-        .spb-arrow { font-size: 0.82rem; color: var(--warm-gray); }
-        .spb-promo-price {
-          font-family: var(--font-display); font-size: 1.2rem;
-          font-weight: 800; color: #C0392B;
-        }
-        .spb-discount-badge {
-          padding: 3px 10px; border-radius: 20px;
-          background: #C0392B; color: white;
-          font-size: 0.74rem; font-weight: 800;
-        }
-        .spb-note {
-          font-size: 0.74rem; color: var(--warm-gray); margin: 0;
-        }
-
-        .spb-regular {
-          display: flex; align-items: center; gap: 10px;
-        }
-        .spb-regular-label { font-size: 0.82rem; color: var(--warm-gray); font-weight: 500; }
-        .spb-regular-price {
-          font-weight: 700; font-size: 1rem; color: #2E7D32;
-        }
-
-        /* Subtotal */
-        .sale-subtotal {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 10px 14px; border-radius: var(--radius-md);
-          background: var(--cream); border: 1px solid var(--cream-dark);
-          animation: fadeIn 0.2s ease;
-        }
-        .sale-subtotal-label { font-size: 0.8rem; color: var(--warm-gray); font-weight: 500; }
-        .sale-subtotal-value { font-family: var(--font-display); font-size: 1.1rem; font-weight: 800; }
-
-        /* Actions */
         .sale-actions {
           display: flex; gap: 10px; flex-wrap: wrap;
           padding-top: 4px;

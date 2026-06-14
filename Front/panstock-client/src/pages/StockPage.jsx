@@ -106,14 +106,25 @@ function StockCard({ item }) {
           border-radius: var(--radius-md); padding: 12px 14px;
           display: flex; flex-direction: column; gap: 6px;
           transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+          /* ⚠️ CRÍTICO: en grid de 2 columnas los hijos necesitan min-width:0 */
+          min-width: 0;
+          overflow: hidden;
         }
         .sc-card.urgent { border-color: rgba(192,57,43,0.4); background: rgba(192,57,43,0.03); }
-        .sc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .sc-name { font-weight: 600; font-size: 0.88rem; color: var(--espresso); flex: 1; min-width: 0;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sc-qty  { font-weight: 800; font-size: 1rem; color: var(--espresso); flex-shrink: 0; }
-        .sc-unit { font-size: 0.72rem; color: var(--warm-gray); font-weight: 400; }
-        .sc-exp  { font-size: 0.76rem; }
+        .sc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+        .sc-name {
+          font-weight: 600; font-size: 0.88rem; color: var(--espresso); flex: 1; min-width: 0;
+          /* Permitir wrap en 2 líneas máximo — nunca nowrap en mobile */
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          word-break: break-word;
+          line-height: 1.3;
+        }
+        .sc-qty  { font-weight: 800; font-size: 0.96rem; color: var(--espresso); flex-shrink: 0; white-space: nowrap; }
+        .sc-unit { font-size: 0.7rem; color: var(--warm-gray); font-weight: 400; }
+        .sc-exp  { font-size: 0.74rem; word-break: break-word; line-height: 1.4; }
       `}</style>
     </div>
   );
@@ -611,12 +622,22 @@ export default function StockPage() {
 
         @media (max-width: 500px) {
           .stock-action-btn { max-width: 100%; }
-          .stock-summary-grid { grid-template-columns: 1fr 1fr; }
+          .stock-summary-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+          }
+          /* ⚠️ Cada hijo del grid necesita min-width:0 para no desbordar */
+          .stock-summary-grid > * { min-width: 0; }
           .stock-controls { flex-direction: column; align-items: stretch; }
           .stock-tabs { align-self: flex-start; }
+          .stock-content { padding: var(--space-md) var(--space-sm); }
+          /* Search full width en mobile */
+          .stock-search-wrap { min-width: 0; }
+          .stock-filter-sel  { width: 100%; }
         }
         @media (max-width: 340px) {
           .stock-summary-grid { grid-template-columns: 1fr; }
+          .sc-name { font-size: 0.82rem; }
         }
       `}</style>
     </div>

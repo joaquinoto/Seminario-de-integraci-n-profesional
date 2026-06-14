@@ -604,16 +604,32 @@ export default function SuppliersPage() {
           font-family: var(--font-display); font-size: 1.1rem;
           font-weight: 700; color: white;
         }
-        .sup-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-        .sup-name { font-weight: 700; font-size: 0.95rem; color: var(--espresso); }
+        .sup-info {
+          display: flex; flex-direction: column; gap: 5px;
+          min-width: 0;   /* ⚠️ CRÍTICO: permite que flex hijo se encoja */
+          overflow: hidden;
+        }
+        .sup-name {
+          font-weight: 700; font-size: 0.95rem; color: var(--espresso);
+          word-break: break-word;
+        }
         .sup-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .sup-contact {
           font-size: 0.78rem; color: var(--warm-gray);
+          word-break: break-word;
+          overflow-wrap: break-word;
         }
         .sup-notes {
           font-size: 0.76rem; color: var(--warm-gray);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px;
           font-style: italic;
+          /* Truncar en 3 líneas — nunca nowrap en mobile */
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          word-break: break-word;
+          overflow-wrap: break-word;
+          /* En desktop recuperar la línea única con max-width */
         }
 
         .sup-row-right {
@@ -627,9 +643,26 @@ export default function SuppliersPage() {
           color: var(--warm-gray-light); margin-top: 12px;
         }
 
+        /* Mobile: padding reducido y layout vertical */
         @media (max-width: 560px) {
-          .sup-row { flex-direction: column; }
+          .sup-content { padding: var(--space-lg) var(--space-sm); }
+          .sup-row { flex-direction: column; gap: 10px; padding: 14px; }
           .sup-row-right { justify-content: space-between; width: 100%; }
+          /* search y filtros full width */
+          .sup-search-wrap { min-width: 0; }
+          .sup-filter-sel  { width: 100%; }
+        }
+
+        /* Desktop: notas en 1 línea con ellipsis */
+        @media (min-width: 561px) {
+          .sup-notes {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 420px;
+            -webkit-line-clamp: unset;
+          }
         }
       `}</style>
     </div>

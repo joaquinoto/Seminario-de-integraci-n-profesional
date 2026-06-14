@@ -231,3 +231,56 @@ input, select, textarea, button {
   0%   { clip-path: ellipse(60% 0% at 50% 0%); }
   100% { clip-path: ellipse(120% 60% at 50% 0%); }
 }
+
+/* ══════════════════════════════════════════════
+   FIX MOBILE — overflow y word-break defensivos
+   Aplica sobre classNames que SÍ existen en el proyecto
+   ══════════════════════════════════════════════ */
+
+/*
+  Regla raíz del problema:
+  En flexbox, min-width por defecto es "auto" (tamaño del contenido).
+  Esto hace que el hijo crezca más allá de su contenedor.
+  Solución: min-width:0 en el contenedor de texto que es hijo directo de flex.
+*/
+
+/* StockPage — hijos del grid de 2 columnas */
+.stock-summary-grid > * {
+  min-width: 0;
+}
+
+/* SuppliersPage — contenedor de info de texto */
+.sup-info {
+  min-width: 0;
+  overflow: hidden;
+}
+.sup-name,
+.sup-notes,
+.sup-contact {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* CategoriesPage — si existe un componente de categorías similar */
+.cat-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Regla universal para grids CSS nativos:
+   cualquier hijo directo de un grid recibe min-width:0.
+   Seguro porque el contenido interno controla su propio tamaño. */
+.stock-summary-grid > *,
+.prod-list > * {
+  min-width: 0;
+}
+
+/* ── Inputs en mobile: evitar zoom iOS ── */
+@media (max-width: 767px) {
+  .stock-search,
+  .sup-search,
+  .stock-filter-sel,
+  .sup-filter-sel {
+    font-size: 16px !important;
+  }
+}

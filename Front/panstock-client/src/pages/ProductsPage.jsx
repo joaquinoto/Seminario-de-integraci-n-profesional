@@ -194,14 +194,6 @@ export default function ProductsPage() {
         {/* ── Desktop table header (oculto en mobile) ── */}
         {status === 'succeeded' && filtered.length > 0 && (
           <>
-            <div className="prod-table-header desktop-only">
-              <span className="th-name">Producto</span>
-              <span className="th-cat">Categoría</span>
-              <span className="th-origin">Origen</span>
-              <span className="th-price">Precio venta</span>
-              <span className="th-status">Estado</span>
-              {isOwner(user) && <span className="th-actions">Acciones</span>}
-            </div>
 
             <div className="prod-list">
               {filtered.map((p, i) => (
@@ -400,21 +392,7 @@ export default function ProductsPage() {
 
         /* ── Desktop table header ── */
         .desktop-only { display: none; }
-
-        .prod-table-header {
-          display: flex; align-items: center; gap: 10px;
-          padding: 8px 16px; margin-bottom: 4px;
-          font-size: 0.7rem; font-weight: 700;
-          letter-spacing: 0.08em; text-transform: uppercase;
-          color: var(--warm-gray-light);
-        }
-        .th-name    { flex: 3; }
-        .th-cat     { flex: 2; }
-        .th-origin  { flex: 1.2; }
-        .th-price   { flex: 1.5; text-align: right; }
-        .th-status  { flex: 1; text-align: center; }
-        .th-actions { flex: 1; text-align: center; }
-
+       
         /* ── List ── */
         .prod-list { display: flex; flex-direction: column; gap: 8px; }
 
