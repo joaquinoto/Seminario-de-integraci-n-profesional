@@ -96,10 +96,6 @@ const nowBsAsISO = (addHours = 0) => {
   return d.toISOString().slice(0, 19);
 };
 
-/**
- * Devuelve la etiqueta del tipo de descuento extendido de una promo,
- * considerando los tags [TYPE:...] en description para 2x1 y segunda unidad 50%.
- */
 const resolveDiscountDisplay = (promotion) => {
   const ext = extractExtendedType(promotion);
   if (ext === 'TWO_FOR_ONE')    return { label: '2 x 1',         color: '#5500CC', bg: 'rgba(88,0,220,0.10)'  };
@@ -113,11 +109,7 @@ const resolveDiscountDisplay = (promotion) => {
   return null;
 };
 
-/**
- * Construye el payload para el backend al crear una promo.
- * TWO_FOR_ONE y SECOND_UNIT_50 se codifican en description con un tag especial.
- * El backend los recibe como PERCENTAGE (sin cambios en API).
- */
+
 const buildCreatePayload = ({ suggestion, form, userId }) => {
   const base = {
     productId:         suggestion.productId,
