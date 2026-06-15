@@ -140,8 +140,4 @@ public class ProductServiceImpl implements ProductService {
             throw new BadRequestException("Ya existe otro producto con el nombre " + name);
         }
     }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> f72905bdbe7e19d486790f4609d332d2bdc3d294

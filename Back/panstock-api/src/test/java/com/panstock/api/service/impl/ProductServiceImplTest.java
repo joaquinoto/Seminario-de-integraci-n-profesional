@@ -335,8 +335,4 @@ class ProductServiceImplTest {
                     .anyMatch(supplier -> supplier.getName().equalsIgnoreCase(name));
         }
     }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> f72905bdbe7e19d486790f4609d332d2bdc3d294
