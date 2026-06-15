@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectIsAuthenticated, selectToken, logout } from './features/auth/authSlice';
+import {
+  selectShouldShowAutoWasteModal,
+} from './features/waste/autoWasteNotificationSlice';
 import ProtectedRoute  from './components/ProtectedRoute';
 import LoginPage       from './pages/LoginPage';
 import RegisterPage    from './pages/RegisterPage';
@@ -14,6 +17,7 @@ import StockPage       from './pages/StockPage';
 import WastePage       from './pages/WastePage';
 import Restockpage     from './pages/RestockPage';
 import PromotionsPage  from './pages/PromotionsPage';
+import AutoWasteModal  from './components/AutoWasteModal';
 
 /**
  * TokenGuard — verifica en cada render si el JWT del store sigue vigente.
@@ -41,6 +45,77 @@ function TokenGuard() {
 
   return null;
 }
+/**
+ * AutoWasteModalController
+ *
+ * Se monta dentro del Router para poder usar useLocation().
+ * Controla cuándo se muestra el AutoWasteModal:
+ *
+ * - Aparece cuando `shouldShow` es true (hay lotes auto-descartados hoy
+ *   y el usuario no confirmó aún).
+ * - Se oculta temporalmente al hacer clic fuera del modal (dismiss).
+ * - Reaparece CADA VEZ que la ruta cambia, hasta que el usuario confirme.
+ * - No aparece en rutas de auth (/login, /register).
+ *
+ * Manejo de race condition con redux-persist:
+ * Al hacer login, redux-persist ejecuta REHYDRATE *después* del primer
+ * render, por lo que `shouldShow` puede llegar como false inicialmente y
+ * actualizarse a true instantes después. Para capturar ese caso se usa
+ * un segundo useEffect exclusivo para el cambio de `shouldShow`, que
+ * reabre el modal si el usuario ya está autenticado y no está en una ruta
+ * de auth — independientemente de si la ruta cambió o no.
+ */
+function AutoWasteModalController() {
+  const location     = useLocation();
+  const isAuth       = useSelector(selectIsAuthenticated);
+  const shouldShow   = useSelector(selectShouldShowAutoWasteModal);
+  const [visible, setVisible] = useState(false);
+
+  const isAuthRoute =
+    location.pathname === '/login' ||
+    location.pathname === '/register';
+
+   // ── Efecto 1: reaparece en cada cambio de RUTA ───────────────────────────
+    // Cubre la navegación normal entre páginas mientras hay lotes pendientes.
+    useEffect(() => {
+      if (!isAuth || isAuthRoute || !shouldShow) {
+        setVisible(false);
+        return;
+      }
+      // Pequeño delay para no interrumpir la transición de ruta
+      const t = setTimeout(() => setVisible(true), 350);
+      return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.pathname]);
+
+   // ── Efecto 2: reacciona al cambio de `shouldShow` y `isAuth` ────────────
+    // Cubre dos escenarios:
+    //   a) REHYDRATE de redux-persist tras login: shouldShow pasa false→true
+    //      sin que la ruta haya cambiado.
+    //   b) Nuevo login después de logout: isAuth pasa false→true con lotes
+    //      pendientes ya en el store (preservados en el rootReducer).
+    useEffect(() => {
+      if (!isAuth || isAuthRoute) {
+        setVisible(false);
+        return;
+      }
+      if (shouldShow) {
+        const t = setTimeout(() => setVisible(true), 400);
+        return () => clearTimeout(t);
+      } else {
+        setVisible(false);
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shouldShow, isAuth]);
+  
+    if (!visible || !shouldShow || !isAuth || isAuthRoute) return null;
+
+  return (
+    <AutoWasteModal
+      onDismiss={() => setVisible(false)}
+    />
+  );
+}
 
 export default function App() {
   const isAuth = useSelector(selectIsAuthenticated);
@@ -48,6 +123,8 @@ export default function App() {
   return (
     <>
       <TokenGuard />
+      <AutoWasteModalController />
+
       <Routes>
         {/* ── Rutas públicas ─────────────────────────────────────────────── */}
         <Route

@@ -6,6 +6,7 @@ import com.panstock.api.entity.Product;
 import com.panstock.api.entity.ProductCategory;
 import com.panstock.api.entity.Supplier;
 import com.panstock.api.enums.ProductOrigin;
+import com.panstock.api.exception.BadRequestException;
 import com.panstock.api.exception.ResourceNotFoundException;
 import com.panstock.api.mapper.ProductMapper;
 import com.panstock.api.repository.ProductCategoryRepository;
@@ -29,6 +30,8 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductResponse create(ProductRequest request) {
+        validateProductNameForCreate(request.name());
+
         ProductCategory category = findCategory(request.categoryId());
         Supplier supplier = findSupplierIfPresent(request.defaultSupplierId());
 
@@ -69,6 +72,9 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductResponse update(Long id, ProductRequest request) {
         Product product = findProduct(id);
+
+        validateProductNameForUpdate(request.name(), id);
+
         ProductCategory category = findCategory(request.categoryId());
         Supplier supplier = findSupplierIfPresent(request.defaultSupplierId());
 
@@ -121,5 +127,17 @@ public class ProductServiceImpl implements ProductService {
 
         return supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Proveedor no encontrado con id " + id));
+    }
+
+    private void validateProductNameForCreate(String name) {
+        if (productRepository.existsByNameIgnoreCase(name)) {
+            throw new BadRequestException("Ya existe un producto con el nombre " + name);
+        }
+    }
+
+    private void validateProductNameForUpdate(String name, Long id) {
+        if (productRepository.existsByNameIgnoreCaseAndIdNot(name, id)) {
+            throw new BadRequestException("Ya existe otro producto con el nombre " + name);
+        }
     }
 }

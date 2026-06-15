@@ -46,6 +46,14 @@ public class StockMovement {
     @Column(name = "related_waste_record_id")
     private Long relatedWasteRecordId;
 
+    /**
+     * Precio unitario de venta aplicado en este movimiento.
+     * Nulo para movimientos que no sean SALE.
+     * Si la venta tiene promo activa, refleja el precio promocional.
+     */
+    @Column(name = "unit_sale_price", precision = 12, scale = 2)
+    private BigDecimal unitSalePrice;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

@@ -118,10 +118,14 @@ CREATE TABLE stock_movements (
     movement_date DATETIME NOT NULL,
     notes TEXT,
     related_waste_record_id BIGINT,
+    -- Precio unitario de venta aplicado en el movimiento.
+    -- Nulo para movimientos que no sean SALE (ENTRY, WASTE, ADJUSTMENT_*).
+    -- Si la venta tuvo promo activa, refleja el precio promocional.
+    unit_sale_price DECIMAL(12,2) DEFAULT NULL,
     created_at DATETIME NOT NULL,
     CONSTRAINT fk_movements_product FOREIGN KEY (product_id) REFERENCES products(id),
-    CONSTRAINT fk_movements_batch FOREIGN KEY (batch_id) REFERENCES inventory_batches(id),
-    CONSTRAINT fk_movements_user FOREIGN KEY (user_id) REFERENCES users(id)
+    CONSTRAINT fk_movements_batch   FOREIGN KEY (batch_id)   REFERENCES inventory_batches(id),
+    CONSTRAINT fk_movements_user    FOREIGN KEY (user_id)    REFERENCES users(id)
 );
 
 CREATE TABLE waste_records (
@@ -218,6 +222,7 @@ CREATE INDEX idx_movements_batch ON stock_movements(batch_id);
 CREATE INDEX idx_movements_user ON stock_movements(user_id);
 CREATE INDEX idx_movements_type ON stock_movements(movement_type);
 CREATE INDEX idx_movements_date ON stock_movements(movement_date);
+CREATE INDEX idx_movements_sale_price ON stock_movements(movement_type, unit_sale_price);
 
 CREATE INDEX idx_waste_product ON waste_records(product_id);
 CREATE INDEX idx_waste_batch ON waste_records(batch_id);
@@ -590,18 +595,12 @@ FROM waste_records w
 WHERE w.created_at >= DATE_SUB(NOW(), INTERVAL 6 DAY);
 
 -- =========================================================
--- VERIFICACIÓN RÁPIDA (descomentar para validar)
+-- VERIFICACIÓN DE MERMAS (descomentar para validar)
 -- =========================================================
 
--- SELECT b.id, p.name, b.current_quantity, b.batch_status, b.expiration_date,
---        DATEDIFF(b.expiration_date, CURDATE()) AS dias_para_vencer,
---        CASE
---          WHEN b.expiration_date IS NULL                    THEN 'NOT_APPLICABLE'
---          WHEN DATEDIFF(b.expiration_date, CURDATE()) < 0  THEN 'EXPIRED'
---          WHEN DATEDIFF(b.expiration_date, CURDATE()) = 0  THEN 'RED'
---          WHEN DATEDIFF(b.expiration_date, CURDATE()) <= 2 THEN 'YELLOW'
---          ELSE                                                   'GREEN'
---        END AS expiration_status_esperado
--- FROM inventory_batches b
--- JOIN products p ON p.id = b.product_id
--- ORDER BY b.expiration_date IS NULL, DATEDIFF(b.expiration_date, CURDATE()) ASC;
+-- SELECT wr.id, p.name AS producto, wr.quantity, wr.reason,
+--        wr.economic_loss, u.first_name, u.last_name, wr.waste_date
+-- FROM waste_records wr
+-- JOIN products p ON p.id = wr.product_id
+-- LEFT JOIN users u ON u.id = wr.created_by_id
+-- ORDER BY wr.waste_date DESC;

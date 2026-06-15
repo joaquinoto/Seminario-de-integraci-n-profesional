@@ -15,4 +15,8 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
     List<Product> findByOriginAndActiveTrueOrderByNameAsc(ProductOrigin origin);
 
     List<Product> findByCategoryIdAndActiveTrueOrderByNameAsc(Long categoryId);
+
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

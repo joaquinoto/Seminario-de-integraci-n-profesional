@@ -1,5 +1,4 @@
 package com.panstock.api.mapper;
-
 import com.panstock.api.dto.response.StockMovementHistoryResponse;
 import com.panstock.api.dto.response.StockMovementResponse;
 import com.panstock.api.entity.InventoryBatch;
@@ -27,6 +26,7 @@ public class StockMovementMapper {
                 batch != null ? batch.getId() : null,
                 movement.getMovementType(),
                 movement.getQuantity(),
+                movement.getUnitSalePrice(),
                 movement.getMovementDate(),
                 movement.getNotes()
         );
@@ -49,6 +49,7 @@ public class StockMovementMapper {
                 user != null ? user.getId() : null,
                 movement.getMovementType(),
                 movement.getQuantity(),
+                movement.getUnitSalePrice(),
                 movement.getMovementDate(),
                 movement.getRelatedWasteRecordId(),
                 movement.getNotes()

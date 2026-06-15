@@ -308,18 +308,19 @@ export default function ExpirationPage() {
     if (toProcess.length === 0) return;
 
     toProcess.forEach((item) => processingRef.current.add(item.batchId));
-
     const processAll = async () => {
       try {
-        for (const item of toProcess) {
-          await dispatch(
-            autoWasteExpiredBatch({
-              token,
-              batchId:  item.batchId,
-              quantity: Number(item.currentQuantity),
-            })
-          );
-        }
+         for (const item of toProcess) {
+            await dispatch(
+               autoWasteExpiredBatch({
+                 token,
+                 batchId:     item.batchId,
+                 quantity:    Number(item.currentQuantity),
+                 productName: item.productName,   // ← NUEVO: para el modal de confirmación
+           })
+         );
+       }
+       
         dispatch(clearExpirationState());
         dispatch(fetchSemaphore({ token }));
 

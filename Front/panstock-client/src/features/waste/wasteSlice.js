@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { recordAutoWaste } from './autoWasteNotificationSlice';
 
 const BASE_URL = import.meta.env.MODE === 'development'
   ? ''
@@ -66,36 +67,41 @@ export const createWasteRecord = createAsyncThunk(
  *
  * Registra automáticamente la merma de UN lote vencido (daysToExpire < 0).
  * userId = null → backend lo acepta como "sistema automático".
- * created_by_id queda NULL en la BD → en /waste se muestra badge rojo
- * "Descartar lote vencido" (createdByName === null en WasteRecordResponse).
  *
- * Idempotencia:
- *   - autoWastePending (solo en memoria) evita duplicar llamadas en vuelo.
- *   - Si el lote ya está DEPLETED, el backend responde 400 → rejected se
- *     ignora silenciosamente (no se hace rejectWithValue para que no
- *     aparezca como error en UI).
- *   - El processingRef en ExpirationPage evita múltiples ciclos simultáneos.
+ * Tras el éxito, dispara recordAutoWaste para acumular el lote en el
+ * slice de notificación del día y mostrar el modal de confirmación.
  */
 export const autoWasteExpiredBatch = createAsyncThunk(
   'waste/autoWasteExpiredBatch',
-  async ({ token, batchId, quantity }, { rejectWithValue }) => {
+  async ({ token, batchId, quantity, productName }, { dispatch, rejectWithValue }) => {
     try {
       const data = {
         batchId,
-        userId:   null,   // null = sistema automático → createdBy queda NULL
+        userId:   null,
         quantity,
         reason:   'EXPIRED',
         notes:    'Descarte automático de lote vencido (sistema).',
       };
-      return await fetch(`${BASE_URL}/api/waste-records`, {
+      const result = await fetch(`${BASE_URL}/api/waste-records`, {
         method: 'POST',
         headers: authHeaders(token),
         body: JSON.stringify(data),
       }).then(handleResponse);
+
+      // ── Notificar al slice del modal ──────────────────────────────────
+      // Se dispara aquí (no en extraReducers) para tener acceso al payload
+      // enriquecido (productName viene del thunk arg, wasteRecordId del result).
+      if (result) {
+        dispatch(recordAutoWaste({
+          batchId,
+          productName: productName || result.productName || `Lote #${batchId}`,
+          quantity,
+          wasteRecordId: result.id ?? null,
+        }));
+      }
+
+      return result;
     } catch (e) {
-      // No propagamos el error hacia el UI: el backend devuelve 400
-      // si el lote ya está DEPLETED, lo cual es un caso esperado.
-      // rejectWithValue vacío para que el slice lo maneje silenciosamente.
       return rejectWithValue(e.message);
     }
   }
@@ -135,9 +141,6 @@ const initialState = {
   users:        [],
   usersStatus:  'idle',
   activeFilters: initialFilters,
-  // autoWastePending: guard SOLO para la sesión activa en memoria.
-  // Evita llamadas simultáneas para el mismo batchId dentro de la misma sesión.
-  // NO se persiste: al recargar la página debe poder reintentar.
   autoWastePending: [],
 };
 
@@ -183,10 +186,6 @@ const wasteSlice = createSlice({
       .addCase(createWasteRecord.rejected,  (s, a) => { s.actionStatus = 'failed'; s.actionError = a.payload; });
 
     // ── autoWasteExpiredBatch ──
-    // pending: agrega batchId a autoWastePending (guard en memoria)
-    // fulfilled: quita batchId de pending e inserta el registro en la lista
-    // rejected: quita batchId de pending silenciosamente
-    //   (el backend devuelve 400 si el lote ya está DEPLETED, caso esperado)
     builder
       .addCase(autoWasteExpiredBatch.pending, (s, a) => {
         const batchId = a.meta.arg.batchId;
@@ -197,13 +196,11 @@ const wasteSlice = createSlice({
       .addCase(autoWasteExpiredBatch.fulfilled, (s, a) => {
         const batchId = a.meta.arg.batchId;
         s.autoWastePending = s.autoWastePending.filter((id) => id !== batchId);
-        // Insertar el registro automático al inicio de la lista si está cargada
         if (s.items && a.payload) {
           s.items.unshift(a.payload);
         }
       })
       .addCase(autoWasteExpiredBatch.rejected, (s, a) => {
-        // Quitar de pending silenciosamente — error esperado (lote ya DEPLETED)
         const batchId = a.meta.arg.batchId;
         s.autoWastePending = s.autoWastePending.filter((id) => id !== batchId);
       });
