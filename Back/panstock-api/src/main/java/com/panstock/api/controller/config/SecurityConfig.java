@@ -116,7 +116,6 @@ public class SecurityConfig {
         corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         corsConfig.setAllowCredentials(false);
         corsConfig.addAllowedHeader("*");
-        corsConfig.setMaxAge(3600L); // 1 hora de caché para preflight
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);
