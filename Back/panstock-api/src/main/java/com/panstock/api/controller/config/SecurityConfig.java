@@ -112,33 +112,10 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfig = new CorsConfiguration();
         
-        // ESPECIFICAR MÚLTIPLES ORÍGENES (dev + prod)
-        corsConfig.setAllowedOrigins(List.of(
-            "http://localhost:3000",
-            "http://localhost:5173",
-            "https://seminario-de-integraci-n-profesiona.vercel.app",
-            "https://*.vercel.app"
-        ));
-        
-        corsConfig.setAllowedMethods(List.of(
-            HttpMethod.GET.name(),
-            HttpMethod.POST.name(),
-            HttpMethod.PUT.name(),
-            HttpMethod.PATCH.name(),
-            HttpMethod.DELETE.name(),
-            HttpMethod.OPTIONS.name()
-        ));
-        
-        // PERMITIR TODOS LOS HEADERS 
-        corsConfig.setAllowedHeaders(List.of("*"));
-        
-        // EXPONER HEADERS CRÍTICOS EN RESPUESTAS
-        corsConfig.setExposedHeaders(List.of(
-            "Content-Type",
-            "Authorization"
-        ));
-        
+        corsConfig.setAllowedOrigins(List.of("*"));
+        corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         corsConfig.setAllowCredentials(false);
+        corsConfig.addAllowedHeader("*");
         corsConfig.setMaxAge(3600L); // 1 hora de caché para preflight
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
