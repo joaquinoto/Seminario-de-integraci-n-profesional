@@ -129,13 +129,8 @@ public class SecurityConfig {
             HttpMethod.OPTIONS.name()
         ));
         
-        // PERMITIR HEADERS NECESARIOS
-        corsConfig.setAllowedHeaders(List.of(
-            "Content-Type",
-            "Authorization",
-            "X-Requested-With",
-            "Accept"
-        ));
+        // PERMITIR TODOS LOS HEADERS 
+        corsConfig.setAllowedHeaders(List.of("*"));
         
         // EXPONER HEADERS CRÍTICOS EN RESPUESTAS
         corsConfig.setExposedHeaders(List.of(
