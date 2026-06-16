@@ -36,7 +36,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
     private final StockMovementRepository  stockMovementRepository;
     private final UserJpaRepository        userRepository;
 
-    // ── CREATE ────────────────────────────────────────────────────────────────
+    // ── CREATE ──────────────────────────────────────────────────────────────
 
     @Override
     public WasteRecordResponse create(WasteRecordRequest request) {
@@ -115,8 +115,9 @@ public class WasteRecordServiceImpl implements WasteRecordService {
             WasteReason reason,
             Long createdById
     ) {
-        LocalDateTime fromDt = from != null ? from.atStartOfDay()                         : null;
-        LocalDateTime toDt   = to   != null ? to.plusDays(1).atStartOfDay().minusNanos(1) : null;
+        // Usar ZONE para conversión consistente
+        LocalDateTime fromDt = from != null ? from.atStartOfDay(ZONE).toLocalDateTime()                         : null;
+        LocalDateTime toDt   = to   != null ? to.plusDays(1).atStartOfDay(ZONE).minusNanos(1).toLocalDateTime() : null;
 
         if (fromDt != null && toDt != null && toDt.isBefore(fromDt)) {
             throw new BadRequestException(
@@ -137,7 +138,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                 .collect(Collectors.toList());
     }
 
-    // ── FIND BY ID ────────────────────────────────────────────────────────────
+    // ── FIND BY ID ─────────────────────────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
@@ -148,7 +149,7 @@ public class WasteRecordServiceImpl implements WasteRecordService {
         return WasteRecordMapper.toResponse(wasteRecord);
     }
 
-    // ── HELPERS ───────────────────────────────────────────────────────────────
+    // ── HELPERS ────────────────────────────────────────────────────────────────
 
     private boolean matchesSupplier(WasteRecord r, Long supplierId) {
         if (r.getBatch() != null && r.getBatch().getSupplier() != null) {
@@ -171,12 +172,11 @@ public class WasteRecordServiceImpl implements WasteRecordService {
      * Regla específica para motivo EXPIRED:
      *   - El lote DEBE tener fecha de vencimiento definida y ya pasada
      *
-     * IMPORTANTE: se usa ZoneId "America/Argentina/Buenos_Aires" para
+     * IMPORTANTE: Se usa ZoneId "America/Argentina/Buenos_Aires" para
      * comparar fechas, de forma consistente con el resto del backend
      * (StockServiceImpl, AlertServiceImpl, PromotionServiceImpl, etc.).
-     * Antes se usaba LocalDate.now() sin zona horaria, lo que fallaba
-     * en producción (servidor UTC) al intentar descartar lotes vencidos
-     * desde el frontend en horario nocturno de Argentina.
+     * Esto asegura que incluso en servidor UTC (producción en nube),
+     * la validación use la hora local correcta de Argentina.
      */
     private void validateWasteRequest(InventoryBatch batch, WasteRecordRequest request) {
         if (request.quantity().compareTo(BigDecimal.ZERO) <= 0) {
@@ -202,7 +202,9 @@ public class WasteRecordServiceImpl implements WasteRecordService {
                         + "fecha de vencimiento y ésta debe ser anterior o igual a la fecha actual.");
             }
         
-            if (batch.getExpirationDate().isAfter(LocalDate.now(ZONE))) {
+            // USO CORRECTO DE ZONE PARA COMPARAR FECHAS
+            LocalDate today = LocalDate.now(ZONE);
+            if (batch.getExpirationDate().isAfter(today)) {
                 throw new BadRequestException(
                         "El lote seleccionado no está vencido (vence el "
                         + batch.getExpirationDate() + "). "
