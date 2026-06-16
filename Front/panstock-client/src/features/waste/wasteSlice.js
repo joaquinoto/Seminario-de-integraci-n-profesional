@@ -30,7 +30,15 @@ export const fetchWasteRecords = createAsyncThunk(
   'waste/fetchAll',
   async ({ token, params = {} } = {}, { rejectWithValue }) => {
     try {
-      if (!token) {
+      //Si no viene token en el argumento, extrae de Redux
+      let effectiveToken = token;
+      if (!effectiveToken) {
+        const state = getState();
+        effectiveToken = state.auth?.token;
+        console.warn('[wasteSlice] Token no llegó en argumento, extrayendo de Redux:', effectiveToken?.substring(0, 20) + '...');
+      }
+      
+      if (!effectiveToken) {
         throw new Error('No hay token de autenticación. Por favor, inicia sesión.');
       }
 
@@ -55,13 +63,19 @@ export const createWasteRecord = createAsyncThunk(
   'waste/create',
   async ({ token, data }, { rejectWithValue }) => {
     try {
-      if (!token) {
+     let effectiveToken = token;
+      if (!effectiveToken) {
+        const state = getState();
+        effectiveToken = state.auth?.token;
+      }
+      
+      if (!effectiveToken) {
         throw new Error('No hay token de autenticación. Por favor, inicia sesión.');
       }
 
       return await fetch(`${BASE_URL}/api/waste-records`, {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: authHeaders(effectiveToken),
         body: JSON.stringify(data),
       }).then(handleResponse);
     } catch (e) {
@@ -76,7 +90,7 @@ export const createWasteRecord = createAsyncThunk(
  * Registra automáticamente la merma de UN lote vencido (daysToExpire < 0).
  * userId = null → backend lo acepta como "sistema automático".
  *
- * ✅ MEJORADO: Ahora valida token y maneja errores 403 (auth) vs otros errores.
+ * Ahora valida token y maneja errores 403 (auth) vs otros errores.
  *
  * Tras el éxito, dispara recordAutoWaste para acumular el lote en el
  * slice de notificación del día y mostrar el modal de confirmación.
@@ -85,7 +99,13 @@ export const autoWasteExpiredBatch = createAsyncThunk(
   'waste/autoWasteExpiredBatch',
   async ({ token, batchId, quantity, productName }, { dispatch, rejectWithValue }) => {
     try {
-      if (!token) {
+      let effectiveToken = token;
+      if (!effectiveToken) {
+        const state = getState();
+        effectiveToken = state.auth?.token;
+      }
+
+      if (!effectiveToken) {
         throw new Error('No hay token de autenticación. Por favor, inicia sesión.');
       }
 
@@ -99,11 +119,11 @@ export const autoWasteExpiredBatch = createAsyncThunk(
 
       const response = await fetch(`${BASE_URL}/api/waste-records`, {
         method: 'POST',
-        headers: authHeaders(token),
+        headers: authHeaders(effectiveToken),
         body: JSON.stringify(data),
       });
 
-      // ✅ Detectar errores específicos
+      // Detectar errores específicos
       if (response.status === 403) {
         throw new Error(
           'Acceso denegado (403). Verifica tu sesión o permisos. ' +
