@@ -43,10 +43,10 @@ export const fetchProfile = createAsyncThunk(
 
 // ─── Helper: extrae el objeto user de la respuesta del backend ───────────────
 // La respuesta de /auth/authenticate y /auth/register devuelve:
-//   { access_token, user_id, username, email, role, firstName, lastName }
-// Mapeamos user_id → id para que el store sea consistente.
+//   { accessToken, userId, username, email, role, firstName, lastName }
+// Mapeamos userId → id para que el store sea consistente.
 const extractUser = (payload) => ({
-  id:        payload.user_id   ?? payload.userId ?? null,
+  id:        payload.userId   ?? payload.userId ?? null,
   username:  payload.username,
   email:     payload.email,
   role:      payload.role,
@@ -98,7 +98,7 @@ const authSlice = createSlice({
       .addCase(loginUser.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.isAuthenticated = true;
-        state.token = action.payload.access_token;
+        state.token = action.payload.accessToken;
         state.user = extractUser(action.payload);
       })
       .addCase(loginUser.rejected, (state, action) => {
@@ -117,7 +117,7 @@ const authSlice = createSlice({
       .addCase(registerUser.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.isAuthenticated = true;
-        state.token = action.payload.access_token;
+        state.token = action.payload.accessToken;
         state.user = extractUser(action.payload);
       })
       .addCase(registerUser.rejected, (state, action) => {
