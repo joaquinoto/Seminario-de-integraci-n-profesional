@@ -29,16 +29,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private UserDetailsService userDetailsService;
 
     @Override
-    protected void doFilterInternal(@NonNull HttpServletRequest request,
-                                @NonNull HttpServletResponse response,
-                                @NonNull FilterChain filterChain)
-        throws ServletException, IOException {
-    
-    // Intenta leer en formato estándar y luego en minúsculas para producción
-    String authHeader = request.getHeader("Authorization");
-        if (authHeader == null) {
-            authHeader = request.getHeader("authorization");
+    protected void doFilterInternal(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain)
+            throws ServletException, IOException {
+
+        // Pasar preflight OPTIONS sin procesar
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
         }
+
+        // Buscar el header Authorization en múltiples formatos
+        // (algunos proxies lo normalizan a minúsculas)
+        String authHeader = extractAuthHeader(request);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
@@ -46,11 +51,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            final String jwt = authHeader.substring(7);
+            final String jwt = authHeader.substring(7).trim();
+            
+            if (jwt.isEmpty()) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             final String username = jwtService.extractUsername(jwt);
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+                
                 if (jwtService.isTokenValid(jwt, userDetails) && !jwtService.isTokenExpired(jwt)) {
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
@@ -62,11 +74,33 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception error) {
+            // Limpiar contexto pero NO enviar 401 aquí — dejar que Spring Security lo maneje
+            // Esto permite que rutas públicas sigan funcionando aunque el token sea inválido
             SecurityContextHolder.clearContext();
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token invalido o expirado");
-            return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Extrae el header Authorization probando múltiples variantes.
+     * En producción con proxies (Render, Nginx, Cloudflare) el header
+     * puede llegar en minúsculas o con variaciones.
+     */
+    private String extractAuthHeader(HttpServletRequest request) {
+        // Variantes del header que diferentes proxies pueden enviar
+        String[] headerVariants = {
+            "Authorization",
+            "authorization",
+            "AUTHORIZATION"
+        };
+
+        for (String headerName : headerVariants) {
+            String value = request.getHeader(headerName);
+            if (value != null && !value.isEmpty()) {
+                return value;
+            }
+        }
+        return null;
     }
 }
