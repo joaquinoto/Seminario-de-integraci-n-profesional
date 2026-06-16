@@ -44,10 +44,7 @@ const CATALOG_MODULES = [
 
 const OWNER_MODULES = [
   { icon: '🛒', title: 'Reposición', desc: 'Productos con stock por debajo del mínimo', to: '/restock' },
-];
-
-const COMING_MODULES = [
-  { icon: '📊', title: 'Reportes', desc: 'Mermas y pérdidas económicas' },
+  { icon: '📊', title: 'Reportes',   desc: 'Mermas, ventas y balance de stock', to: '/reports' },
 ];
 
 export default function DashboardPage() {
@@ -199,8 +196,9 @@ export default function DashboardPage() {
           <span className="promo-dash-arrow">→</span>
         </button>
 
-        {/* ── Reposición (OWNER) ── */}
+        {/* ── Reposición(OWNER) ── */}
         {isOwner && (
+        
           <button
             className="restock-card"
             onClick={() => navigate('/restock')}
@@ -231,6 +229,8 @@ export default function DashboardPage() {
 
             <span className="rst-arrow">→</span>
           </button>
+          
+      
         )}
 
         {/* ── Operaciones principales ── */}
@@ -321,25 +321,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-
-        {/* ── Próximamente ── */}
-        {COMING_MODULES.length > 0 && (
-          <div>
-            <h2 className="section-heading">Próximamente</h2>
-            <div className="modules-grid">
-              {COMING_MODULES.map((m) => (
-                <div key={m.title} className="module-card soon">
-                  <span className="module-icon">{m.icon}</span>
-                  <div className="module-text">
-                    <p className="module-title">{m.title}</p>
-                    <p className="module-desc">{m.desc}</p>
-                  </div>
-                  <span className="module-badge">Próximamente</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
       </main>
 
@@ -452,7 +433,9 @@ export default function DashboardPage() {
           flex-shrink: 0; transition: transform var(--transition-fast);
         }
         .promo-dash-card:hover .promo-dash-arrow { transform: translateX(4px); }
-
+        
+       
+        
         /* ── Restock card ── */
         .restock-card {
           width: 100%; display: flex; align-items: center; gap: var(--space-md);

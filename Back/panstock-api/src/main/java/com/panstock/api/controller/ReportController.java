@@ -16,6 +16,8 @@ public class ReportController {
 
     private final ReportService reportService;
 
+    // ── Waste ─────────────────────────────────────────────────────────────────
+
     @GetMapping("/waste-summary")
     public WasteSummaryReportResponse getWasteSummary(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -51,5 +53,49 @@ public class ReportController {
     @GetMapping("/stock-status")
     public List<StockStatusReportResponse> getStockStatus() {
         return reportService.getStockStatus();
+    }
+
+    // ── Sales ─────────────────────────────────────────────────────────────────
+
+    @GetMapping("/sales-summary")
+    public SalesReportResponse getSalesSummary(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return reportService.getSalesSummary(from, to);
+    }
+
+    @GetMapping("/sales-by-product")
+    public List<SalesByProductResponse> getSalesByProduct(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return reportService.getSalesByProduct(from, to);
+    }
+
+    @GetMapping("/sales-by-category")
+    public List<SalesByCategoryResponse> getSalesByCategory(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return reportService.getSalesByCategory(from, to);
+    }
+
+    // ── Stock Balance ─────────────────────────────────────────────────────────
+
+    @GetMapping("/stock-balance")
+    public StockBalanceResponse getStockBalance(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return reportService.getStockBalance(from, to);
+    }
+
+    @GetMapping("/stock-balance-by-product")
+    public List<StockBalanceByProductResponse> getStockBalanceByProduct(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return reportService.getStockBalanceByProduct(from, to);
     }
 }

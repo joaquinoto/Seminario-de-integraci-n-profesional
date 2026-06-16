@@ -21,6 +21,7 @@ import {
   clearSaleState,
 } from '../features/stock/stockSlice';
 import {
+  fetchActivePromotions,
   selectPromotions,
 } from '../features/promotions/promotionsSlice';
 import { selectToken, selectUser } from '../features/auth/authSlice';
@@ -39,26 +40,18 @@ const STATUS_CONFIG = {
   GREEN:   { label: 'En buen estado', color: '#1E8449', bg: 'rgba(30,132,73,0.10)',  icon: '🟢', order: 3 },
 };
 
-// Orden de urgencia para elegir el lote a mostrar
 const STATUS_ORDER = { EXPIRED: 0, RED: 1, YELLOW: 2, GREEN: 3 };
 
 function statusOrder(status) {
   return STATUS_ORDER[status] ?? 99;
 }
 
-/**
- * Dado el array de ítems de un producto (ya filtrados con stock > 0),
- * devuelve el lote más urgente:
- *   1. Por status (EXPIRED < RED < YELLOW < GREEN)
- *   2. Dentro del mismo status, por daysToExpire ASC (más próximo primero)
- */
 function pickMostUrgentBatch(batches) {
   if (!batches || batches.length === 0) return null;
   return [...batches].sort((a, b) => {
     const sA = statusOrder(a.status);
     const sB = statusOrder(b.status);
     if (sA !== sB) return sA - sB;
-    // Mismo status: menor daysToExpire primero (vence antes)
     const dA = a.daysToExpire ?? 9999;
     const dB = b.daysToExpire ?? 9999;
     return dA - dB;
@@ -90,7 +83,6 @@ function DaysChip({ days, status }) {
 }
 
 // ─── Summary pills ────────────────────────────────────────────────────────────
-
 function SummaryBar({ counts, activeFilter, onFilter }) {
   const pills = [
     { key: 'ALL',    label: 'Todos',          count: counts.expired + counts.red + counts.yellow + counts.green, color: 'var(--espresso)', bg: 'var(--cream-dark)' },
@@ -141,14 +133,11 @@ function SummaryBar({ counts, activeFilter, onFilter }) {
 }
 
 // ─── ProductBatchCard ─────────────────────────────────────────────────────────
-// Muestra una card por producto con el lote más urgente con stock disponible.
-// Incluye botón de venta (ambos roles) y botón de promo (owner activa, employee ve).
-
 function ProductBatchCard({
   productId,
   productName,
-  displayBatch,       // el lote a mostrar (más urgente con stock)
-  totalBatchesCount,  // cuántos lotes tiene el producto en total (con stock)
+  displayBatch,
+  totalBatchesCount,
   isProductActive,
   activePromo,
   isOwnerUser,
@@ -166,12 +155,11 @@ function ProductBatchCard({
       className="exp-group"
       style={{ '--group-color': cfg.color, '--group-bg': cfg.bg }}
     >
-      {/* Header de la card */}
       <div className="exp-group-header">
         <div className="exp-group-left">
           <div className="exp-group-indicator" style={{ background: cfg.color }} />
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span className="exp-group-name">{productName}</span>
               {!isProductActive && (
                 <span className="exp-inactive-badge">🚫 Retirado de la venta</span>
@@ -188,9 +176,7 @@ function ProductBatchCard({
           </div>
         </div>
 
-        {/* Acciones del grupo */}
         <div className="exp-group-actions">
-          {/* Registrar venta — ambos roles */}
           <button
             className="exp-action-btn sale"
             onClick={() => onSale({ productId, productName })}
@@ -201,7 +187,6 @@ function ProductBatchCard({
         </div>
       </div>
 
-      {/* Fila del lote */}
       <div className="exp-batches">
         <div className="exp-batch-row">
           <div className="exp-batch-left">
@@ -226,7 +211,6 @@ function ProductBatchCard({
               <span className="exp-batch-id">Lote #{displayBatch.batchId}</span>
             </div>
 
-            {/* Botón de promo */}
             {hasActivePromo ? (
               <button
                 className="exp-batch-promo-btn active-promo"
@@ -254,7 +238,6 @@ function ProductBatchCard({
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function ExpirationPage() {
   const dispatch         = useDispatch();
   const navigate         = useNavigate();
@@ -271,15 +254,21 @@ export default function ExpirationPage() {
   const [activeFilter,   setActiveFilter]   = useState('ALL');
   const [search,         setSearch]         = useState('');
   const [autoWasteToast, setAutoWasteToast] = useState('');
-  const [saleModal,      setSaleModal]      = useState(null); // { productId, productName, activePromo }
+  const [saleModal,      setSaleModal]      = useState(null);
 
   const processingRef = useRef(new Set());
 
-  // ── Helpers de promociones ────────────────────────────────────────────────
-  const getActivePromoForBatch = (batchId) => {
+  // Busca promo activa para un batch — por productId (aplica al producto completo)
+  const getActivePromoForBatch = (batchId, prodId) => {
     if (!allPromotions?.length) return null;
-    return allPromotions.find(
+    // Primero intentar por batchId específico
+    const byBatch = allPromotions.find(
       (p) => p.status === 'ACTIVE' && p.batchId === batchId
+    );
+    if (byBatch) return byBatch;
+    // Luego por productId (promo que aplica a todo el producto)
+    return allPromotions.find(
+      (p) => p.status === 'ACTIVE' && p.productId === prodId && !p.batchId
     ) || null;
   };
 
@@ -289,6 +278,8 @@ export default function ExpirationPage() {
     dispatch(clearExpirationState());
     dispatch(fetchSemaphore({ token }));
     dispatch(fetchProducts({ token, params: { activeOnly: false } }));
+    // Cargar promos activas para que StockSaleForm pueda detectarlas
+    dispatch(fetchActivePromotions({ token }));
   }, [token, dispatch]);
 
   // ── AUTO-DESCARTE de lotes vencidos ──────────────────────────────────────
@@ -310,17 +301,16 @@ export default function ExpirationPage() {
     toProcess.forEach((item) => processingRef.current.add(item.batchId));
     const processAll = async () => {
       try {
-         for (const item of toProcess) {
-            await dispatch(
-               autoWasteExpiredBatch({
-                 token,
-                 batchId:     item.batchId,
-                 quantity:    Number(item.currentQuantity),
-                 productName: item.productName,   // ← NUEVO: para el modal de confirmación
-           })
-         );
-       }
-       
+        for (const item of toProcess) {
+          await dispatch(
+            autoWasteExpiredBatch({
+              token,
+              batchId:     item.batchId,
+              quantity:    Number(item.currentQuantity),
+              productName: item.productName,
+            })
+          );
+        }
         dispatch(clearExpirationState());
         dispatch(fetchSemaphore({ token }));
 
@@ -342,17 +332,14 @@ export default function ExpirationPage() {
     return found ? Boolean(found.active) : true;
   };
 
-  // ── Agrupar por producto y elegir lote más urgente ─────────────────────
-  // Solo mostramos lotes con stock > 0 y que no estén filtrados por activeFilter
+  // ── Agrupar por producto ─────────────────────────────────────────────────
   const groupedProducts = useMemo(() => {
-    // 1. Filtrar por búsqueda
     let filtered = [...items];
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       filtered = filtered.filter((i) => i.productName.toLowerCase().includes(q));
     }
 
-    // 2. Agrupar todos los lotes por producto
     const productMap = new Map();
     for (const item of filtered) {
       if (!productMap.has(item.productId)) {
@@ -365,7 +352,6 @@ export default function ExpirationPage() {
       productMap.get(item.productId).batches.push(item);
     }
 
-    // 3. Por cada producto, elegir el lote más urgente con stock > 0
     const result = [];
     for (const [, group] of productMap) {
       const batchesWithStock = group.batches.filter(
@@ -375,7 +361,6 @@ export default function ExpirationPage() {
 
       const displayBatch = pickMostUrgentBatch(batchesWithStock);
 
-      // 4. Filtrar por activeFilter: aplicar sobre el lote elegido
       if (activeFilter !== 'ALL' && displayBatch.status !== activeFilter) continue;
 
       result.push({
@@ -386,7 +371,6 @@ export default function ExpirationPage() {
       });
     }
 
-    // 5. Ordenar: primero los más urgentes
     result.sort((a, b) => {
       const sA = statusOrder(a.displayBatch.status);
       const sB = statusOrder(b.displayBatch.status);
@@ -423,8 +407,6 @@ export default function ExpirationPage() {
       <AppTopbar />
 
       <div className="exp-content">
-
-        {/* Header */}
         <div className="exp-header">
           <div>
             <h1 className="exp-title">⏰ Vencimientos</h1>
@@ -440,6 +422,7 @@ export default function ExpirationPage() {
               dispatch(clearExpirationState());
               dispatch(fetchSemaphore({ token }));
               dispatch(fetchProducts({ token, params: { activeOnly: false } }));
+              dispatch(fetchActivePromotions({ token }));
             }}
             disabled={status === 'loading' || autoWasteRunning}
             title="Actualizar"
@@ -449,12 +432,10 @@ export default function ExpirationPage() {
           </button>
         </div>
 
-        {/* Toast de auto-descarte */}
         {autoWasteToast && (
           <div className="exp-auto-toast">{autoWasteToast}</div>
         )}
 
-        {/* Progreso de auto-descarte */}
         {autoWasteRunning && (
           <div className="exp-auto-progress">
             <span className="exp-auto-spinner" />
@@ -465,7 +446,6 @@ export default function ExpirationPage() {
         {fetchErr && <div className="exp-error">⚠ {fetchErr}</div>}
         {status === 'loading' && <TableSkeleton rows={6} />}
 
-        {/* Summary pills */}
         {status === 'succeeded' && (
           <SummaryBar
             counts={counts}
@@ -474,7 +454,6 @@ export default function ExpirationPage() {
           />
         )}
 
-        {/* Buscador */}
         {status === 'succeeded' && items.length > 0 && (
           <div className="exp-controls">
             <div className="exp-search-wrap">
@@ -492,7 +471,6 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* Estado vacío */}
         {status === 'succeeded' && groupedProducts.length === 0 && (
           <div className="exp-empty">
             <span className="exp-empty-icon">
@@ -513,11 +491,10 @@ export default function ExpirationPage() {
           </div>
         )}
 
-        {/* Cards de productos — 1 por producto */}
         {status === 'succeeded' && groupedProducts.length > 0 && (
           <div className="exp-groups">
             {groupedProducts.map((group) => {
-              const activePromo   = getActivePromoForBatch(group.displayBatch.batchId);
+              const activePromo   = getActivePromoForBatch(group.displayBatch.batchId, group.productId);
               const productActive = isProductActive(group.productId);
 
               return (
@@ -545,7 +522,7 @@ export default function ExpirationPage() {
         )}
       </div>
 
-      {/* ── Modal: Registrar venta ── */}
+      {/* Modal: Registrar venta */}
       <Modal
         isOpen={Boolean(saleModal)}
         onClose={() => {
@@ -640,7 +617,7 @@ export default function ExpirationPage() {
         }
         .exp-empty-reset:hover { background: var(--cream-medium); color: var(--espresso); }
 
-        /* ── Cards ── */
+        /* Cards */
         .exp-groups { display: flex; flex-direction: column; gap: 10px; }
         .exp-group {
           background: white; border-radius: var(--radius-lg);
@@ -657,21 +634,17 @@ export default function ExpirationPage() {
         .exp-group-indicator { width: 4px; height: 36px; border-radius: 2px; flex-shrink: 0; }
         .exp-group-name  { display: block; font-weight: 700; font-size: 0.98rem; color: var(--espresso); }
         .exp-group-count { display: block; font-size: 0.74rem; color: var(--warm-gray); margin-top: 1px; }
-
         .exp-inactive-badge {
           display: inline-flex; align-items: center; gap: 4px;
           padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
           color: #7f1d1d; background: rgba(127,29,29,0.1); white-space: nowrap;
         }
-        /* Badge "más lotes" */
         .exp-more-batches {
           display: inline-flex; align-items: center;
           padding: 3px 9px; border-radius: 20px; font-size: 0.68rem; font-weight: 700;
           color: var(--warm-gray); background: var(--cream-dark); white-space: nowrap;
         }
-
         .exp-group-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
         .exp-action-btn {
           padding: 7px 14px; border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
@@ -680,11 +653,8 @@ export default function ExpirationPage() {
         .exp-action-btn.sale {
           background: rgba(46,125,50,0.09); border: 1.5px solid rgba(46,125,50,0.3); color: #2E7D32;
         }
-        .exp-action-btn.sale:hover {
-          background: rgba(46,125,50,0.16); border-color: #2E7D32;
-        }
+        .exp-action-btn.sale:hover { background: rgba(46,125,50,0.16); border-color: #2E7D32; }
 
-        /* Fila del lote */
         .exp-batches { display: flex; flex-direction: column; }
         .exp-batch-row {
           display: flex; align-items: center; justify-content: space-between;
@@ -693,7 +663,6 @@ export default function ExpirationPage() {
         }
         .exp-batch-row:hover { background: var(--cream); }
         .exp-batch-left  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-
         .exp-batch-right-wrap {
           display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap;
           justify-content: flex-end;
@@ -701,7 +670,6 @@ export default function ExpirationPage() {
         .exp-batch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
         .exp-batch-qty   { font-weight: 700; font-size: 0.88rem; color: var(--espresso); }
         .exp-batch-id    { font-size: 0.72rem; color: var(--warm-gray-light); }
-
         .exp-batch-promo-btn {
           padding: 5px 12px; border-radius: var(--radius-md);
           font-family: var(--font-body); font-size: 0.76rem; font-weight: 700;
@@ -711,17 +679,16 @@ export default function ExpirationPage() {
         .exp-batch-promo-btn.active-promo {
           background: rgba(46,125,50,0.10); border: 1.5px solid rgba(46,125,50,0.35); color: #2E7D32;
         }
-        .exp-batch-promo-btn.active-promo:hover {
-          background: rgba(46,125,50,0.18); border-color: #2E7D32;
-        }
+        .exp-batch-promo-btn.active-promo:hover { background: rgba(46,125,50,0.18); border-color: #2E7D32; }
         .exp-batch-promo-btn.activate-promo {
           background: rgba(214,137,16,0.10); border: 1.5px solid rgba(214,137,16,0.35); color: #A07800;
         }
-        .exp-batch-promo-btn.activate-promo:hover {
-          background: rgba(214,137,16,0.18); border-color: #D68910;
-        }
+        .exp-batch-promo-btn.activate-promo:hover { background: rgba(214,137,16,0.18); border-color: #D68910; }
 
         .exp-count { text-align: right; font-size: 0.78rem; color: var(--warm-gray-light); margin-top: 12px; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes spin   { to { transform: rotate(360deg); } }
 
         @media (max-width: 600px) {
           .exp-group-header { flex-direction: column; align-items: flex-start; }

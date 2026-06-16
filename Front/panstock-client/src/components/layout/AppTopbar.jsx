@@ -105,6 +105,10 @@ export default function AppTopbar() {
           badge:      restockCount > 0 ? restockCount : null,
           badgeColor: restockBadgeColor,
         },
+        { to: '/reports',     
+          label: 'Reportes',      
+          icon: '📊', 
+          badge: null },
       ]
     : [];
 

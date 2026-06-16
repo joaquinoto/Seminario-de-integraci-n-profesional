@@ -16,6 +16,7 @@ import notificationsReducer         from '../features/notifications/notification
 import restockReducer               from '../features/stock/restockSlice';
 import promotionsReducer            from '../features/promotions/promotionsSlice';
 import autoWasteNotificationReducer from '../features/waste/autoWasteNotificationSlice';
+import reportsReducer               from '../features/reports/reportsSlice';
 
 const authPersistConfig = {
   key: 'panstock-auth', storage,
@@ -64,6 +65,12 @@ const autoWasteNotificationPersistConfig = {
   // whitelist vacío = persiste todo el estado del slice
 };
 
+//Persistimos solo los rangos de fecha de los reportes (UX convenience)
+const reportsPersistConfig = {
+  key: 'panstock-reports', storage,
+  whitelist: ['dateRanges'],
+};
+
 const appReducer = combineReducers({
   auth:                  persistReducer(authPersistConfig,                  authReducer),
   categories:            persistReducer(categoriesPersistConfig,            categoriesReducer),
@@ -76,6 +83,7 @@ const appReducer = combineReducers({
   restock:               restockReducer,
   promotions:            promotionsReducer,
   autoWasteNotification: persistReducer(autoWasteNotificationPersistConfig, autoWasteNotificationReducer),
+  reports:               persistReducer(reportsPersistConfig,               reportsReducer),
 });
 
 const rootReducer = (state, action) => {
