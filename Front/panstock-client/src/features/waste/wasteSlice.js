@@ -33,7 +33,7 @@ export const fetchWasteRecords = createAsyncThunk(
       let effectiveToken = token;
       if (!effectiveToken) {
         const state = getState();
-        effectiveToken = state.auth?.token || state.auth?.accessToken; 
+        effectiveToken = state.auth?.token || state.auth?.access_token; 
         console.warn('[wasteSlice] Token no llegó en argumento, extrayendo de Redux:', effectiveToken?.substring(0, 20) + '...');
       }
       
@@ -66,7 +66,7 @@ export const createWasteRecord = createAsyncThunk(
       let effectiveToken = token;
       if (!effectiveToken) {
         const state = getState();
-        effectiveToken = state.auth?.token || state.auth?.accessToken;
+        effectiveToken = state.auth?.token || state.auth?.access_token;
       }
       
       if (!effectiveToken) {
@@ -91,7 +91,7 @@ export const autoWasteExpiredBatch = createAsyncThunk(
       let effectiveToken = token;
       if (!effectiveToken) {
         const state = getState();
-        effectiveToken = state.auth?.token || state.auth?.accessToken;
+        effectiveToken = state.auth?.token || state.auth?.access_token;
       }
 
       if (!effectiveToken) {
