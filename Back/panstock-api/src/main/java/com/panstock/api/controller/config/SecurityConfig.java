@@ -74,7 +74,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/stock/restock-suggestions").hasAuthority(Role.OWNER.name())
 
                     // ── Waste records: OWNER + EMPLOYEE ───────────────────────────────
-                    .requestMatchers("/api/waste-records/**").authenticated()
+                    .requestMatchers( "/api/waste-records","/api/waste-records/**").authenticated()
 
                     // ── Alerts: OWNER + EMPLOYEE ─────────────────────────────────────
                     .requestMatchers("/api/alerts/**").authenticated()

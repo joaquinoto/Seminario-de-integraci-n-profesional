@@ -257,6 +257,7 @@ export default function ExpirationPage() {
   const [saleModal,      setSaleModal]      = useState(null);
 
   const processingRef = useRef(new Set());
+  const attemptedRef = useRef(new Set());
 
   // Busca promo activa para un batch — por productId (aplica al producto completo)
   const getActivePromoForBatch = (batchId, prodId) => {
@@ -293,12 +294,16 @@ export default function ExpirationPage() {
         item.daysToExpire < 0 &&
         Number(item.currentQuantity) > 0 &&
         !processingRef.current.has(item.batchId) &&
+        !attemptedRef.current.has(item.batchId) &&
         !autoWastePending.includes(item.batchId)
     );
 
     if (toProcess.length === 0) return;
 
-    toProcess.forEach((item) => processingRef.current.add(item.batchId));
+    toProcess.forEach((item) => {
+      processingRef.current.add(item.batchId);
+      attemptedRef.current.add(item.batchId);
+    });
     const processAll = async () => {
       try {
         for (const item of toProcess) {
@@ -311,7 +316,7 @@ export default function ExpirationPage() {
             })
           );
         }
-        dispatch(clearExpirationState());
+        //dispatch(clearExpirationState());
         dispatch(fetchSemaphore({ token }));
 
         const plural = toProcess.length !== 1;
@@ -419,6 +424,7 @@ export default function ExpirationPage() {
             className="exp-refresh-btn"
             onClick={() => {
               processingRef.current.clear();
+              attemptedRef.current.clear();
               dispatch(clearExpirationState());
               dispatch(fetchSemaphore({ token }));
               dispatch(fetchProducts({ token, params: { activeOnly: false } }));
