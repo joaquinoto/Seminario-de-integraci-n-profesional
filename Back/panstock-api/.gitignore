@@ -28,5 +28,13 @@ target/
 ### VS Code ###
 .vscode/
 
-## Data Base ##
-./main/resources/application.properties
+## Local Spring Boot config ##
+src/main/resources/application.properties
+src/main/resources/application-*.properties
+src/main/resources/application.yml
+src/main/resources/application-*.yml
+src/main/resources/application.yaml
+src/main/resources/application-*.yaml
+!src/main/resources/application*.example.properties
+!src/main/resources/application*.example.yml
+!src/main/resources/application*.example.yaml

@@ -11,7 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
-.env
+
+# Local Vite config
+.env*
+!.env*.example
 
 # Editor directories and files
 .vscode/*

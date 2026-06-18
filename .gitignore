@@ -12,6 +12,21 @@ dist
 dist-ssr
 *.local
 
+# Local app config
+.env*
+!.env*.example
+Front/panstock-client/.env*
+!Front/panstock-client/.env*.example
+Back/panstock-api/src/main/resources/application.properties
+Back/panstock-api/src/main/resources/application-*.properties
+Back/panstock-api/src/main/resources/application.yml
+Back/panstock-api/src/main/resources/application-*.yml
+Back/panstock-api/src/main/resources/application.yaml
+Back/panstock-api/src/main/resources/application-*.yaml
+!Back/panstock-api/src/main/resources/application*.example.properties
+!Back/panstock-api/src/main/resources/application*.example.yml
+!Back/panstock-api/src/main/resources/application*.example.yaml
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
