@@ -19,6 +19,7 @@ Front/panstock-client/.env*
 !Front/panstock-client/.env*.example
 Back/panstock-api/src/main/resources/application.properties
 Back/panstock-api/src/main/resources/application-*.properties
+!Back/panstock-api/src/main/resources/application-prod.properties
 Back/panstock-api/src/main/resources/application.yml
 Back/panstock-api/src/main/resources/application-*.yml
 Back/panstock-api/src/main/resources/application.yaml
