@@ -16,6 +16,7 @@ dist-ssr
 .env*
 !.env*.example
 Front/panstock-client/.env*
+!Front/panstock-client/.env.production
 !Front/panstock-client/.env*.example
 Back/panstock-api/src/main/resources/application.properties
 Back/panstock-api/src/main/resources/application-*.properties

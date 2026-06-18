@@ -14,6 +14,7 @@ dist-ssr
 
 # Local Vite config
 .env*
+!.env.production
 !.env*.example
 
 # Editor directories and files
