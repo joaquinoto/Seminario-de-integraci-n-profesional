@@ -62,7 +62,7 @@ const MAX_STOCK_DASHBOARD_ITEMS = 9;
 const EXPIRATION_STATUS_CONFIG = {
   EXPIRED: { label: 'Vencido',      color: '#C0392B', bg: 'rgba(192,57,43,0.10)',  icon: '●', order: 0 },
   RED:     { label: 'Vence hoy',    color: '#E74C3C', bg: 'rgba(231,76,60,0.10)',  icon: '●', order: 1 },
-  YELLOW:  { label: 'Próximo',      color: '#E67E22', bg: 'rgba(230,126,34,0.10)', icon: '●', order: 2 },
+  YELLOW:  { label: 'Próximo',      color: '#ffbb00', bg: 'rgba(214,161,15,0.16)', icon: '●', order: 2 },
   GREEN:   { label: 'En orden',     color: '#27AE60', bg: 'rgba(39,174,96,0.10)',  icon: '●', order: 3 },
 };
 
@@ -284,7 +284,7 @@ export default function DashboardPage() {
   const urgentCount = counts.expired + counts.red + counts.yellow;
   const semColor    = counts.expired > 0 ? '#C0392B'
                     : counts.red     > 0 ? '#E74C3C'
-                    : counts.yellow  > 0 ? '#E67E22'
+                    : counts.yellow  > 0 ? '#D6A10F'
                     : '#27AE60';
 
   const promoColor = isOwner
@@ -466,198 +466,6 @@ export default function DashboardPage() {
             </>
           )}
         </section>
-
-        {/* ── Semáforo ── */}
-        <button
-          className="semaphore-card"
-          onClick={() => navigate('/expiration')}
-          style={{ '--sem-color': semColor }}
-        >
-          <div className="sem-left">
-            <div className="sem-icon-wrap" style={{ background: semColor }}>⏰</div>
-            <div>
-              <p className="sem-title">Estado de vencimientos</p>
-              <p className="sem-sub">
-                {semStatus === 'loading'
-                  ? 'Actualizando...'
-                  : urgentCount > 0
-                    ? `${urgentCount} lote${urgentCount !== 1 ? 's' : ''} requieren atención`
-                    : 'Todo en orden'}
-              </p>
-            </div>
-          </div>
-
-          <div className="sem-dots">
-            {[
-              { key: 'expired', label: 'Venc.',  val: counts.expired, color: '#C0392B' },
-              { key: 'red',     label: 'Hoy',    val: counts.red,     color: '#E74C3C' },
-              { key: 'yellow',  label: 'Próx.',  val: counts.yellow,  color: '#E67E22' },
-              { key: 'green',   label: 'OK',     val: counts.green,   color: '#27AE60' },
-            ].map(({ key, label, val, color }) => (
-              <div key={key} className="sem-dot-item">
-                <span className="sem-dot-circle" style={{ background: color }} />
-                <span className="sem-dot-count" style={{ color }}>{val}</span>
-                <span className="sem-dot-label">{label}</span>
-              </div>
-            ))}
-          </div>
-
-          <span className="sem-arrow">→</span>
-        </button>
-
-        {/* ── Promociones ── */}
-        <button
-          className="promo-dash-card"
-          onClick={() => navigate('/promotions')}
-          style={{ '--promo-color': promoColor }}
-        >
-          <div className="promo-dash-left">
-            <div className="promo-dash-icon" style={{ background: promoColor }}>🏷️</div>
-            <div>
-              <p className="promo-dash-title">Promociones de venta</p>
-              <p className="promo-dash-sub">{promoSubtext}</p>
-            </div>
-          </div>
-
-          {isOwner && promotionSuggestCount > 0 && (
-            <div className="promo-dash-badge" style={{ background: promoColor + '18', color: promoColor }}>
-              <span className="promo-dash-badge-count">{promotionSuggestCount}</span>
-              <span className="promo-dash-badge-label">sugerencias</span>
-            </div>
-          )}
-          {(!isOwner || promotionSuggestCount === 0) && activePromoCount > 0 && (
-            <div className="promo-dash-badge" style={{ background: promoColor + '18', color: promoColor }}>
-              <span className="promo-dash-badge-count">{activePromoCount}</span>
-              <span className="promo-dash-badge-label">activas</span>
-            </div>
-          )}
-
-          <span className="promo-dash-arrow">→</span>
-        </button>
-
-        {/* ── Reposición(OWNER) ── */}
-        {isOwner && (
-          <button
-            className="restock-card"
-            onClick={() => navigate('/restock')}
-            style={{ '--rst-color': restockCount > 0 ? '#E67E22' : '#27AE60' }}
-          >
-            <div className="rst-left">
-              <div className="rst-icon-wrap" style={{ background: restockCount > 0 ? '#E67E22' : '#27AE60' }}>
-                🛒
-              </div>
-              <div>
-                <p className="rst-title">Reposición de stock</p>
-                <p className="rst-sub">
-                  {restockStatus === 'loading'
-                    ? 'Verificando inventario...'
-                    : restockCount > 0
-                      ? `${restockCount} producto${restockCount !== 1 ? 's' : ''} por debajo del mínimo`
-                      : 'Todo el stock sobre el mínimo'}
-                </p>
-              </div>
-            </div>
-
-            {restockCount > 0 && (
-              <div className="rst-badge">
-                <span className="rst-badge-count">{restockCount}</span>
-                <span className="rst-badge-label">a reponer</span>
-              </div>
-            )}
-
-            <span className="rst-arrow">→</span>
-          </button>
-        )}
-
-        {/* ── Operaciones principales ── */}
-        <div>
-          <h2 className="section-heading">Operaciones</h2>
-          <div className="modules-grid">
-            {MAIN_MODULES.map((m) => (
-              <button key={m.title} className="module-card ready" onClick={() => navigate(m.to)}>
-                <span className="module-icon">{m.icon}</span>
-                <div className="module-text">
-                  <p className="module-title">{m.title}</p>
-                  <p className="module-desc">{m.desc}</p>
-                </div>
-                {m.to === '/promotions' && isOwner && promotionSuggestCount > 0 && (
-                  <span className="module-count-badge" style={{ background: '#D68910' }}>
-                    {promotionSuggestCount}
-                  </span>
-                )}
-                {m.to === '/promotions' && !isOwner && activePromoCount > 0 && (
-                  <span className="module-count-badge" style={{ background: '#2E7D32' }}>
-                    {activePromoCount}
-                  </span>
-                )}
-                <span className="module-arrow">→</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Gestión OWNER ── */}
-        {isOwner && (
-          <div>
-            <h2 className="section-heading">Gestión de inventario</h2>
-            <div className="modules-grid">
-              {OWNER_MODULES.map((m) => (
-                <button key={m.title} className="module-card ready owner-module" onClick={() => navigate(m.to)}>
-                  <span className="module-icon">{m.icon}</span>
-                  <div className="module-text">
-                    <p className="module-title">{m.title}</p>
-                    <p className="module-desc">{m.desc}</p>
-                  </div>
-                  {restockCount > 0 && m.to === '/restock' && (
-                    <span className="module-count-badge">{restockCount}</span>
-                  )}
-                  <span className="module-arrow">→</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Catálogo ── */}
-        <div>
-          <h2 className="section-heading">Catálogo</h2>
-          <div className="modules-grid">
-            {CATALOG_MODULES.map((m) => (
-              <button key={m.title} className="module-card ready" onClick={() => navigate(m.to)}>
-                <span className="module-icon">{m.icon}</span>
-                <div className="module-text">
-                  <p className="module-title">{m.title}</p>
-                  <p className="module-desc">{m.desc}</p>
-                </div>
-                <span className="module-arrow">→</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Info de cuenta ── */}
-        <div className="info-card">
-          <h2 className="info-title">Información de cuenta</h2>
-          <div className="info-grid">
-            <div className="info-item">
-              <span className="info-label">Usuario</span>
-              <span className="info-value">@{user?.username}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Nombre completo</span>
-              <span className="info-value">{user?.firstName} {user?.lastName}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Email</span>
-              <span className="info-value">{user?.email}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Rol</span>
-              <span className="info-value">{role.icon} {role.label}</span>
-            </div>
-          </div>
-        </div>
-
       </main>
 
       <Modal
