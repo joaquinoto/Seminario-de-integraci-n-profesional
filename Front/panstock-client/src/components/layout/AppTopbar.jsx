@@ -235,12 +235,24 @@ export default function AppTopbar() {
           gap: 2px;
           flex: 1;
           overflow-x: auto;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(89, 63, 43, 0.45) transparent;
           /* Padding para que el primer/último item no quede pegado al borde */
-          padding: 0 2px;
+          padding: 0 2px 5px;
         }
-        .topbar-nav::-webkit-scrollbar { display: none; }
+        .topbar-nav::-webkit-scrollbar {
+          height: 6px;
+        }
+        .topbar-nav::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .topbar-nav::-webkit-scrollbar-thumb {
+          background: rgba(89, 63, 43, 0.45);
+          border-radius: 999px;
+        }
+        .topbar-nav::-webkit-scrollbar-thumb:hover {
+          background: rgba(89, 63, 43, 0.65);
+        }
 
         .topbar-link {
           position: relative;
